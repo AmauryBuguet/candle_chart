@@ -3,7 +3,8 @@ An independent, embeddable candlestick trading chart widget for Flutter.
 ## Features
 
 - Candlestick rendering with grid, axis labels and an optional Visible-Range
-  Volume Profile (VPVR).
+  Volume Profile (VPVR), volume bars, exponential moving averages and
+  Bollinger Bands.
 - Pan (drag), wheel zoom, pinch zoom, and double-tap to reset/anchor the
   price axis.
 - Optional crosshair with time/price labels on hover.
@@ -11,6 +12,10 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   (`ChartOrderLine`, drawn from their placement time with a "ghost" line back
   to their original price while being edited).
 - Closed/open position P&L shading (`ChartPosition`).
+- Configurable empty space to the right of the latest candle
+  (`ChartViewConfig.rightMargin`) and a jump-back-to-live control.
+- A published price/time to pixel transform (`ChartTransform`), so hosts can
+  draw their own layer on top of the chart.
 
 The chart owns no domain data: everything it draws is passed in as plain,
 exchange-agnostic models, and interaction with drawn objects (selecting or
@@ -29,6 +34,7 @@ TradingChart(
   settings: const ChartSettings(),
   interval: const Duration(minutes: 15),
   viewConfig: const ChartViewConfig(),
+  controller: chartController,  // TradingChartController: transform + jumpToLive
   viewResetKey: selectedSymbol,
   formatPrice: (price) => price.toStringAsFixed(2),
   onPointerDownInChart: (pos, priceAxis, timeAxis, isMobile) {
@@ -46,6 +52,13 @@ TradingChart(
   },
 )
 ```
+
+### Drawing your own layer
+
+Pass a `TradingChartController` and stack your own widget over the chart. The
+controller notifies on every view change and exposes `transform`
+(`yForPrice`/`priceForY`/`xForTime`/`timeForX` plus the `plotArea` rect), and
+`isLive`/`jumpToLive()` for a jump-back-to-now button.
 
 ## Additional information
 

@@ -4,7 +4,8 @@ import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
-import '../internal/margins.dart';
+import '../models/chart_margins.dart';
+import '../internal/indicators.dart';
 import '../internal/timesteps.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
@@ -12,13 +13,18 @@ import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
+import 'position_samples.dart';
 
 /// Ceiling on the decimal places kept when cleaning up generated tick values,
 /// to avoid floating-point noise (e.g. 0.1 + 0.2) — unrelated to any price
 /// formatting/precision rule, which is entirely up to [ChartPainter.formatPrice].
 const int _maxTickCleanupDecimals = 8;
 
-/// Paints the trading chart with candlesticks, grid lines, an optional crosshair, and VPVR.
+/// How much of the chart's height the tallest visible volume bar takes.
+const double _volumeHeightFraction = 0.2;
+
+/// Paints the trading chart with candlesticks, grid lines, an optional
+/// crosshair, VPVR, volume bars and moving averages.
 class ChartPainter extends CustomPainter {
   /// Creates a [ChartPainter].
   ///
@@ -88,6 +94,10 @@ class ChartPainter extends CustomPainter {
       _drawVPVR(canvas, chartRect, firstIndex, effectiveEndIndex);
     }
 
+    if (style.volume) {
+      _drawVolume(canvas, chartRect, firstIndex, effectiveEndIndex);
+    }
+
     // Draw crosshair if active and inside chart area
     if (crosshairPosition != null && style.crosshair && chartRect.contains(crosshairPosition!)) {
       _drawCrosshair(canvas, crosshairPosition!, candles.firstOrNull, dateFormat, chartRect);
@@ -95,6 +105,10 @@ class ChartPainter extends CustomPainter {
 
     // Draw candles
     _drawCandles(canvas, chartRect, firstIndex, effectiveEndIndex);
+
+    // Studies sit over the candles but under the trade objects.
+    _drawBollinger(canvas, chartRect, firstIndex, effectiveEndIndex);
+    _drawEmas(canvas, chartRect, firstIndex, effectiveEndIndex);
 
     // Draw lines (e.g. draft entry/SL/TP lines)
     _drawLines(canvas, chartRect);
@@ -254,7 +268,9 @@ class ChartPainter extends CustomPainter {
       final bool isOpen = position.exit == null;
       if (isOpen && candles.isEmpty) continue;
 
-      final int exitTimestamp = isOpen ? candles.last.timestamp : position.exit!.timestamp;
+      // A forming candle's close is the live price, and it is drawn at the
+      // right edge of that candle's slot rather than at its centre.
+      final int exitTimestamp = isOpen ? closeTime(candles.last) : position.exit!.timestamp;
       final double exitPrice = isOpen ? candles.last.close : position.exit!.price;
 
       if (exitTimestamp < timeAxis.start || position.entry.timestamp > timeAxis.end) {
@@ -305,32 +321,20 @@ class ChartPainter extends CustomPainter {
       double prevPrice = position.entry.price;
       int currentPathState = 0;
 
-      int i = candles.indexWhere((c) => c.timestamp >= position.entry.timestamp);
-      if (i == -1) i = candles.length;
+      final List<(int, double)> samples = positionSamples(
+        candles: candles,
+        entryTimestamp: position.entry.timestamp,
+        exitTimestamp: exitTimestamp,
+        exitPrice: exitPrice,
+      );
 
+      int i = 0;
       while (true) {
-        double nextX, nextY, nextPrice;
-        int nextTs;
-        bool isLast = false;
+        final (int nextTs, double nextPrice) = samples[i];
+        final bool isLast = i == samples.length - 1;
 
-        if (i < candles.length) {
-          if (candles[i].timestamp > exitTimestamp) {
-            nextTs = exitTimestamp;
-            nextPrice = exitPrice;
-            isLast = true;
-          } else {
-            nextTs = candles[i].timestamp;
-            nextPrice = candles[i].close;
-            if (nextTs == exitTimestamp) isLast = true;
-          }
-        } else {
-          nextTs = exitTimestamp;
-          nextPrice = exitPrice;
-          isLast = true;
-        }
-
-        nextX = getX(nextTs);
-        nextY = getY(nextPrice);
+        final double nextX = getX(nextTs);
+        final double nextY = getY(nextPrice);
 
         int prevState = getState(prevPrice);
         int nextState = getState(nextPrice);
@@ -369,8 +373,7 @@ class ChartPainter extends CustomPainter {
         prevPrice = nextPrice;
 
         if (isLast) break;
-
-        if (i < candles.length && candles[i].timestamp == nextTs) i++;
+        i++;
       }
 
       if (currentPathState != 0) {
@@ -446,6 +449,7 @@ class ChartPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
+    final bodyPaint = Paint()..style = PaintingStyle.fill;
 
     for (int i = firstIndex; i < effectiveEndIndex; i++) {
       final candle = candles[i];
@@ -455,6 +459,7 @@ class ChartPainter extends CustomPainter {
       }
 
       paint.color = _colorFromCandle(candle);
+      bodyPaint.color = paint.color;
 
       final x = _getXPositionFromTime(candle.timestamp, chartRect);
       final openY = _getYPositionFromPrice(candle.open, chartRect);
@@ -469,10 +474,148 @@ class ChartPainter extends CustomPainter {
       canvas.drawLine(Offset(x, bottom), Offset(x, lowY), paint);
 
       final bodyRect = Rect.fromLTWH(x - candleDemiWidth, top, candleDemiWidth * 2, max(1.0, bottom - top));
-      canvas.drawRect(bodyRect, paint);
+      canvas.drawRect(bodyRect, _fillsBody(candle) ? bodyPaint : paint);
     }
 
     canvas.restore();
+  }
+
+  /// Volume bars along the bottom edge, as wide as the candle bodies and
+  /// scaled so the busiest visible candle reaches [_volumeHeightFraction].
+  void _drawVolume(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
+    if (firstIndex == -1 || effectiveEndIndex == -1) return;
+
+    double maxVolume = 0;
+    for (int i = firstIndex; i < effectiveEndIndex; i++) {
+      maxVolume = max(maxVolume, candles[i].volume);
+    }
+    if (maxVolume <= 0) return;
+
+    final diffTs = candles[firstIndex].endTimestamp - candles[firstIndex].timestamp;
+    final double candleDemiWidth = chartRect.width * 0.35 * diffTs / timeAxis.range;
+    final double maxHeight = chartRect.height * _volumeHeightFraction;
+
+    canvas.save();
+    canvas.clipRect(chartRect);
+
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (int i = firstIndex; i < effectiveEndIndex; i++) {
+      final candle = candles[i];
+      if (candle.volume <= 0) continue;
+
+      paint.color = _colorFromCandle(candle).withAlpha(70);
+      final x = _getXPositionFromTime(candle.timestamp, chartRect);
+      final height = max(1.0, candle.volume / maxVolume * maxHeight);
+      canvas.drawRect(
+        Rect.fromLTWH(x - candleDemiWidth, chartRect.bottom - height, candleDemiWidth * 2, height),
+        paint,
+      );
+    }
+
+    canvas.restore();
+  }
+
+  /// One polyline per average, over the visible candles plus one on each
+  /// side so the line runs to the edges rather than stopping at the last
+  /// candle centre.
+  void _drawEmas(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
+    if (style.emas.isEmpty || firstIndex == -1 || effectiveEndIndex == -1) return;
+
+    canvas.save();
+    canvas.clipRect(chartRect);
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..strokeJoin = StrokeJoin.round;
+    final from = max(0, firstIndex - 1);
+    final to = min(candles.length, effectiveEndIndex + 1);
+
+    for (final ema in style.emas) {
+      final values = exponentialMovingAverage(candles, ema.period);
+      final path = Path();
+      bool started = false;
+      for (int i = from; i < to; i++) {
+        final value = values[i];
+        if (value == null) continue;
+        final x = _getXPositionFromTime(candles[i].timestamp, chartRect);
+        final y = _getYPositionFromPrice(value, chartRect);
+        if (started) {
+          path.lineTo(x, y);
+        } else {
+          path.moveTo(x, y);
+          started = true;
+        }
+      }
+      if (started) canvas.drawPath(path, paint..color = ema.color);
+    }
+
+    canvas.restore();
+  }
+
+  /// The channel between the bands, faintly filled, with the average as a
+  /// thinner line down the middle.
+  void _drawBollinger(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
+    final bollinger = style.bollinger;
+    if (bollinger == null || firstIndex == -1 || effectiveEndIndex == -1) return;
+
+    final bands = bollingerBands(candles, bollinger.period, bollinger.deviation);
+    final upper = Path();
+    final lower = Path();
+    final middle = Path();
+    final lowerPoints = <Offset>[];
+    bool started = false;
+
+    for (int i = max(0, firstIndex - 1); i < min(candles.length, effectiveEndIndex + 1); i++) {
+      final band = bands[i];
+      if (band == null) continue;
+      final x = _getXPositionFromTime(candles[i].timestamp, chartRect);
+      final upperPoint = Offset(x, _getYPositionFromPrice(band.upper, chartRect));
+      final middlePoint = Offset(x, _getYPositionFromPrice(band.middle, chartRect));
+      lowerPoints.add(Offset(x, _getYPositionFromPrice(band.lower, chartRect)));
+      if (started) {
+        upper.lineTo(upperPoint.dx, upperPoint.dy);
+        middle.lineTo(middlePoint.dx, middlePoint.dy);
+      } else {
+        upper.moveTo(upperPoint.dx, upperPoint.dy);
+        middle.moveTo(middlePoint.dx, middlePoint.dy);
+        started = true;
+      }
+    }
+    if (!started) return;
+
+    lower.moveTo(lowerPoints.first.dx, lowerPoints.first.dy);
+    for (final point in lowerPoints.skip(1)) {
+      lower.lineTo(point.dx, point.dy);
+    }
+    final channel = Path.from(upper);
+    for (final point in lowerPoints.reversed) {
+      channel.lineTo(point.dx, point.dy);
+    }
+    channel.close();
+
+    canvas.save();
+    canvas.clipRect(chartRect);
+
+    canvas.drawPath(channel, Paint()..color = bollinger.color.withAlpha(20));
+    final linePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..color = bollinger.color
+      ..strokeWidth = 1.0;
+    canvas.drawPath(upper, linePaint);
+    canvas.drawPath(lower, linePaint);
+    canvas.drawPath(middle, linePaint..strokeWidth = 0.6);
+
+    canvas.restore();
+  }
+
+  /// Whether this candle's body is painted solid rather than outlined. A doji
+  /// has no body to fill.
+  bool _fillsBody(ChartCandle candle) {
+    if (candle.close > candle.open) return style.filledUpCandles;
+    if (candle.close < candle.open) return style.filledDownCandles;
+    return false;
   }
 
   /// Gets the color of a [ChartCandle] based on price movement.
@@ -490,9 +633,11 @@ class ChartPainter extends CustomPainter {
   String _drawAxisLabels(Canvas canvas, Rect chartRect) {
     // Price axis (vertical)
     final priceTicks = _generateNicePriceTicks(priceAxis.start, priceAxis.end, chartRect.height);
+    // A hairline: the colour's alpha is what keeps the grid quiet, and a
+    // thinner stroke would anti-alias it out of sight.
     final gridPaint = Paint()
       ..color = style.colors.grid
-      ..strokeWidth = 0.1;
+      ..strokeWidth = 1.0;
 
     for (final tick in priceTicks) {
       final yRatio = 1 - (tick - priceAxis.start) / (priceAxis.range);
@@ -523,9 +668,11 @@ class ChartPainter extends CustomPainter {
       final x = chartRect.left + xRatio * chartRect.width;
 
       // grid line
-      final g1 = Offset(x, chartRect.top);
-      final g2 = Offset(x, chartRect.bottom);
-      canvas.drawLine(g1, g2, gridPaint);
+      if (style.grid) {
+        final g1 = Offset(x, chartRect.top);
+        final g2 = Offset(x, chartRect.bottom);
+        canvas.drawLine(g1, g2, gridPaint);
+      }
 
       // Label
       final text = _formatTime(tick, timeTicks.$2);

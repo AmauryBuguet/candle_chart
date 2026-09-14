@@ -6,10 +6,10 @@ import 'package:flutter/widgets.dart';
 
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_margins.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
 import 'event_origin.dart';
-import 'margins.dart';
 import 'price_axis_engine.dart';
 import 'time_axis_engine.dart';
 
@@ -169,6 +169,22 @@ class ChartController extends ChangeNotifier {
         margins = _computeMargins();
         notifyListeners();
       }
+    }
+  }
+
+  /// Whether the visible window still includes now.
+  bool get isLive => _timeAxisEngine.isLive;
+
+  /// Brings the view back to the live edge, keeping the current zoom.
+  void jumpToLive() {
+    final beforeTime = timeAxis;
+    final beforePrice = priceAxis;
+    _timeAxisEngine.jumpToLive();
+    _priceAxisEngine.anchored = true;
+    _refitPriceAxis();
+    if (timeAxis != beforeTime || priceAxis != beforePrice) {
+      margins = _computeMargins();
+      notifyListeners();
     }
   }
 

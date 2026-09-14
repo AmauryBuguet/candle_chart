@@ -8,9 +8,42 @@ import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
+import '../models/chart_transform.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
 import '../painter/chart_painter.dart';
+
+/// A handle on a mounted [TradingChart]: publishes its live price/time to
+/// pixel [transform] so a host can draw its own layer on top of the chart,
+/// and drives the view back to the live edge.
+///
+/// Notifies its listeners whenever [transform] or [isLive] changes.
+class TradingChartController extends ChangeNotifier {
+  ChartTransform? _transform;
+  bool _isLive = true;
+  VoidCallback? _jumpToLive;
+
+  /// The chart's current price/time to pixel mapping, `null` until it has
+  /// been laid out once.
+  ChartTransform? get transform => _transform;
+
+  /// Whether the visible window still includes now.
+  bool get isLive => _isLive;
+
+  /// Brings the view back to the live edge, keeping the current zoom.
+  void jumpToLive() => _jumpToLive?.call();
+
+  void _attach(VoidCallback jumpToLive) => _jumpToLive = jumpToLive;
+
+  void _detach() => _jumpToLive = null;
+
+  void _sync(ChartTransform transform, {required bool isLive}) {
+    if (transform == _transform && isLive == _isLive) return;
+    _transform = transform;
+    _isLive = isLive;
+    notifyListeners();
+  }
+}
 
 /// An embeddable candlestick trading chart: pan/zoom/scroll, crosshair,
 /// draggable price lines, order overlays and position P&L shading.
@@ -35,6 +68,7 @@ class TradingChart extends StatefulWidget {
     required this.onPointerDownOutsideChart,
     required this.onDragUpdate,
     required this.onDragEnd,
+    this.controller,
     this.onPriceAxisChanged,
   });
 
@@ -70,6 +104,9 @@ class TradingChart extends StatefulWidget {
   /// edited order).
   final Future<void> Function() onDragEnd;
 
+  /// Optional handle exposing the chart's pixel transform and jump-to-live.
+  final TradingChartController? controller;
+
   /// Called whenever the visible price axis changes (pan/zoom/reset),
   /// including once with its initial value.
   final void Function(PriceAxis axis)? onPriceAxisChanged;
@@ -92,12 +129,17 @@ class _TradingChartState extends State<TradingChart> {
       viewResetKey: widget.viewResetKey,
       formatPrice: widget.formatPrice,
     )..addListener(_handleControllerChanged);
+    widget.controller?._attach(_controller.jumpToLive);
     _reportPriceAxisIfChanged();
   }
 
   @override
   void didUpdateWidget(covariant TradingChart oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller?._detach();
+      widget.controller?._attach(_controller.jumpToLive);
+    }
     _controller.updateInputs(
       interval: widget.interval,
       viewConfig: widget.viewConfig,
@@ -110,6 +152,7 @@ class _TradingChartState extends State<TradingChart> {
 
   @override
   void dispose() {
+    widget.controller?._detach();
     _controller.dispose();
     super.dispose();
   }
@@ -132,15 +175,42 @@ class _TradingChartState extends State<TradingChart> {
     });
   }
 
+  /// Deferred for the same reason as [_reportPriceAxisIfChanged]: this runs
+  /// during build, and the host's listeners will usually write to their own
+  /// state.
+  void _syncController(Size size) {
+    final controller = widget.controller;
+    if (controller == null) return;
+    final transform = ChartTransform(
+      size: size,
+      margins: _controller.margins,
+      priceAxis: _controller.priceAxis,
+      timeAxis: _controller.timeAxis,
+    );
+    final isLive = _controller.isLive;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) controller._sync(transform, isLive: isLive);
+    });
+  }
+
+  /// A pointer that is already down is dragging something — the chart itself,
+  /// or a host layer above it — so it is not hovering, and re-arming the
+  /// crosshair under it would flash it mid-drag.
+  void _handleHover(PointerEvent event) {
+    if (event.down) return;
+    _controller.setCrosshairPosition(event.localPosition);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
+        _syncController(c.biggest);
         final isMobile = getValueForScreenType<bool>(context: context, mobile: true, desktop: false);
         return SizedBox.expand(
           child: MouseRegion(
-            onEnter: (event) => _controller.setCrosshairPosition(event.localPosition),
-            onHover: (event) => _controller.setCrosshairPosition(event.localPosition),
+            onEnter: _handleHover,
+            onHover: _handleHover,
             onExit: (_) => _controller.setCrosshairPosition(null),
             child: Listener(
               onPointerDown: (event) => _controller.onPointerDown(

@@ -10,14 +10,24 @@ class TimeAxisEngine {
   late TimeAxis axis;
   late int _minRange;
   late int _maxRange;
+  late double _rightMargin;
+
+  /// Whether the current window still shows the live edge of the market.
+  bool get isLive => axis.end >= DateTime.now().millisecondsSinceEpoch;
 
   void reset({required Duration interval, required ChartViewConfig viewConfig}) {
     _minRange = interval.inMilliseconds * viewConfig.minCandles;
     _maxRange = interval.inMilliseconds * viewConfig.maxCandles;
-    axis = TimeAxis(
-      start: DateTime.now().subtract(interval * viewConfig.startCandles * 0.75).millisecondsSinceEpoch,
-      end: DateTime.now().add(interval * viewConfig.startCandles * 0.25).millisecondsSinceEpoch,
-    );
+    _rightMargin = viewConfig.rightMargin;
+    _anchorToNow(interval.inMilliseconds * viewConfig.startCandles);
+  }
+
+  /// Re-centres the window on now, keeping the current zoom level.
+  void jumpToLive() => _anchorToNow(axis.range);
+
+  void _anchorToNow(int range) {
+    final end = DateTime.now().millisecondsSinceEpoch + (range * _rightMargin).round();
+    axis = TimeAxis(start: end - range, end: end);
   }
 
   void pan(int value) {
