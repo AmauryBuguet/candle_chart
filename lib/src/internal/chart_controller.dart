@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_label_style.dart';
 import '../models/chart_margins.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
@@ -28,11 +29,13 @@ class ChartController extends ChangeNotifier {
     required List<ChartCandle> candles,
     required Object viewResetKey,
     required String Function(double price) formatPrice,
+    required ChartLabelStyle labelStyle,
   }) : _interval = interval,
        _viewConfig = viewConfig,
        _candles = candles,
        _viewResetKey = viewResetKey,
        _formatPrice = formatPrice,
+       _labelStyle = labelStyle,
        _timeAxisEngine = TimeAxisEngine(interval: interval, viewConfig: viewConfig) {
     _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
     margins = _computeMargins();
@@ -46,6 +49,7 @@ class ChartController extends ChangeNotifier {
   List<ChartCandle> _candles;
   Object _viewResetKey;
   String Function(double price) _formatPrice;
+  ChartLabelStyle _labelStyle;
 
   EventOrigin _eventOrigin = EventOrigin.other;
   double? _lastHorizontalScale;
@@ -71,8 +75,11 @@ class ChartController extends ChangeNotifier {
     required List<ChartCandle> candles,
     required Object viewResetKey,
     required String Function(double price) formatPrice,
+    required ChartLabelStyle labelStyle,
   }) {
     _formatPrice = formatPrice;
+    final labelStyleChanged = labelStyle != _labelStyle;
+    _labelStyle = labelStyle;
 
     var timeAxisReset = false;
     if (interval != _interval || viewConfig != _viewConfig) {
@@ -98,7 +105,12 @@ class ChartController extends ChangeNotifier {
       if (timeAxisReset || priceAxis != beforePrice) {
         margins = _computeMargins();
         notifyListeners();
+        return;
       }
+    }
+    if (labelStyleChanged) {
+      margins = _computeMargins();
+      notifyListeners();
     }
   }
 
@@ -275,11 +287,11 @@ class ChartController extends ChangeNotifier {
     final endPriceStr = _formatPrice(priceAxis.end);
     final longerPrice = startPriceStr.length > endPriceStr.length ? startPriceStr : endPriceStr;
     final tp = TextPainter(
-      text: TextSpan(text: longerPrice),
+      text: TextSpan(text: longerPrice, style: _labelStyle.textStyle),
       textDirection: TextDirection.ltr,
     )..layout();
     return ChartMargins(
-      right: tp.size.width + 12,
+      right: _labelStyle.labelMargin + tp.size.width + _labelStyle.labelMargin,
       left: 0,
       top: tp.size.height / 2 + 1,
       bottom: tp.size.height + 5,

@@ -128,6 +128,7 @@ class _TradingChartState extends State<TradingChart> {
       candles: widget.candles,
       viewResetKey: widget.viewResetKey,
       formatPrice: widget.formatPrice,
+      labelStyle: widget.style.labelStyle,
     )..addListener(_handleControllerChanged);
     widget.controller?._attach(_controller.jumpToLive);
     _reportPriceAxisIfChanged();
@@ -146,6 +147,7 @@ class _TradingChartState extends State<TradingChart> {
       candles: widget.candles,
       viewResetKey: widget.viewResetKey,
       formatPrice: widget.formatPrice,
+      labelStyle: widget.style.labelStyle,
     );
     _reportPriceAxisIfChanged();
   }
