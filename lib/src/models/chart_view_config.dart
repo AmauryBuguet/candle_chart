@@ -31,6 +31,22 @@ class ChartViewConfig extends Equatable {
     this.logScale = false,
   });
 
+  ChartViewConfig copyWith({
+    int? startCandles,
+    int? minCandles,
+    int? maxCandles,
+    double? rightMargin,
+    double? priceMargin,
+    bool? logScale,
+  }) => ChartViewConfig(
+    startCandles: startCandles ?? this.startCandles,
+    minCandles: minCandles ?? this.minCandles,
+    maxCandles: maxCandles ?? this.maxCandles,
+    rightMargin: rightMargin ?? this.rightMargin,
+    priceMargin: priceMargin ?? this.priceMargin,
+    logScale: logScale ?? this.logScale,
+  );
+
   @override
   List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin, logScale];
 }

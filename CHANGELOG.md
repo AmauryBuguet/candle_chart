@@ -1,3 +1,7 @@
+## 0.4.1
+
+* `ChartViewConfig.copyWith`.
+
 ## 0.4.0
 
 * Drawings: `TradingChart.drawings` takes `ChartDrawing`s — trend line, ray, extended line, horizontal line and ray, vertical line, rectangle, parallel channel, Fibonacci retracement, text, measure — anchored in time and price. The chart hit-tests them, shows the selected one's handles, drags an anchor or the whole drawing, snaps to the candle's open, high, low or close with `magnet`, and places new ones with `activeTool`; `onDrawingCreated`, `onDrawingChanged`, `onDrawingSelected` and `onDrawingDeleted` hand every change back. `toJson`/`fromJson` serialise them. A new drawing takes `ChartColors.drawing`.
