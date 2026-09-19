@@ -1,3 +1,10 @@
+## 0.3.0
+
+* Indicators are a list of value objects on the chart, `TradingChart.indicators`, in place of `ChartStyle.vpvr`, `volume`, `emas` and `bollinger`, which are gone. Each is computed once per candle list and cached against the instance.
+* Overlays over the candles: `ChartSma`, `ChartEma`, `ChartWma`, `ChartVwap` (reset each UTC day), `ChartBollinger`, `ChartIchimoku` (cloud drawn ahead, lagging span behind), `ChartSuperTrend`, `ChartVolumeProfile` (the former VPVR, with its own colours).
+* Panes: `ChartVolume`, `ChartRsi`, `ChartMacd` and `ChartStochastic` each take a pane of their own under the price pane, with a value axis fitted to what is visible or fixed for a bounded oscillator, guide levels, a hairline handle above it that drags to resize, and the grid and crosshair running through. `ChartTransform.panes` and `paneSpace` say where they are; `plotArea` stays the price pane.
+* Volume is a pane, no longer bars along the bottom of the price pane.
+
 ## 0.2.1
 
 * The price axis is sized from its ticks as they are painted, in `ChartLabelStyle.textStyle` with `labelMargin` either side, instead of in the default font: a smaller label style no longer leaves a blank strip to the right of the prices.

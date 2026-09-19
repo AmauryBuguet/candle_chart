@@ -2,9 +2,14 @@ An independent, embeddable candlestick trading chart widget for Flutter.
 
 ## Features
 
-- Candlestick rendering with grid, axis labels and an optional Visible-Range
-  Volume Profile (VPVR), volume bars, exponential moving averages and
-  Bollinger Bands.
+- Candlestick rendering with grid and axis labels.
+- Indicators, passed as a list of value objects and computed once per candle
+  list: over the candles (`ChartSma`, `ChartEma`, `ChartWma`, `ChartVwap`,
+  `ChartBollinger`, `ChartIchimoku`, `ChartSuperTrend`, `ChartVolumeProfile`)
+  or in a pane of their own under the price pane, on their own value axis
+  (`ChartVolume`, `ChartRsi`, `ChartMacd`, `ChartStochastic`). Panes stack in
+  list order with a drag handle above each; `ChartTransform.panes` tells a
+  host where they are.
 - Pan (drag), wheel zoom, pinch zoom, and double-tap to reset/anchor the
   price axis.
 - Optional crosshair with time/price labels on hover.
@@ -31,7 +36,8 @@ TradingChart(
   lines: lines,                // List<ChartLine>
   orderLines: orderLines,      // List<ChartOrderLine>
   positions: positions,        // List<ChartPosition>
-  settings: const ChartSettings(),
+  style: const ChartStyle(),
+  indicators: const [ChartEma(period: 20, color: Colors.amber), ChartRsi(color: Colors.purple)],
   interval: const Duration(minutes: 15),
   viewConfig: const ChartViewConfig(),
   controller: chartController,  // TradingChartController: transform + jumpToLive
@@ -62,7 +68,7 @@ controller notifies on every view change and exposes `transform`
 
 ## Additional information
 
-Part of the [traderaft](../traderaft) app. `movable` on `ChartLine`/
+Part of the Graphite workspace, shared by its trading and charting apps. `movable` on `ChartLine`/
 `ChartOrderLine` defaults to `true` and is currently unused by the chart's
 own gesture handling — it's a hook for hosts implementing a "lock this
 line/order" feature; enforcing it is the host's responsibility when

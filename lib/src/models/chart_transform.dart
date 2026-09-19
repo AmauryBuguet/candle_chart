@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import 'axis.dart';
 import 'chart_margins.dart';
+import 'chart_pane_transform.dart';
 
 /// The chart's price/time to pixel mapping, in the chart widget's own
 /// coordinate space.
@@ -15,6 +16,8 @@ class ChartTransform extends Equatable {
     required this.margins,
     required this.priceAxis,
     required this.timeAxis,
+    this.paneSpace = 0,
+    this.panes = const [],
   });
 
   /// Size of the chart widget, axis gutters included.
@@ -23,12 +26,19 @@ class ChartTransform extends Equatable {
   final PriceAxis priceAxis;
   final TimeAxis timeAxis;
 
-  /// The plotted area, i.e. [size] minus the axis gutters.
+  /// The height the indicator panes and their handles take under the price
+  /// pane, above the time axis gutter.
+  final double paneSpace;
+
+  /// The indicator panes, top to bottom.
+  final List<ChartPaneTransform> panes;
+
+  /// The price pane, i.e. [size] minus the axis gutters and [paneSpace].
   Rect get plotArea => Rect.fromLTRB(
     margins.left,
     margins.top,
     size.width - margins.right,
-    size.height - margins.bottom,
+    size.height - margins.bottom - paneSpace,
   );
 
   double yForPrice(double price) =>
@@ -47,5 +57,5 @@ class ChartTransform extends Equatable {
   bool containsPrice(double price) => price >= priceAxis.start && price <= priceAxis.end;
 
   @override
-  List<Object> get props => [size, margins, priceAxis, timeAxis];
+  List<Object> get props => [size, margins, priceAxis, timeAxis, paneSpace, panes];
 }

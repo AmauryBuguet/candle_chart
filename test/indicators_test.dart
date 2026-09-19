@@ -2,11 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trading_chart/src/internal/indicators.dart';
 import 'package:trading_chart/trading_chart.dart';
 
-List<ChartCandle> _closes(List<double> closes) => [
+List<ChartCandle> _closes(List<double> closes, {int startMs = 0}) => [
   for (var i = 0; i < closes.length; i++)
     ChartCandle(
-      timestamp: i * 60000,
-      endTimestamp: (i + 1) * 60000,
+      timestamp: startMs + i * 60000,
+      endTimestamp: startMs + (i + 1) * 60000,
       open: closes[i],
       high: closes[i],
       low: closes[i],
@@ -15,46 +15,213 @@ List<ChartCandle> _closes(List<double> closes) => [
     ),
 ];
 
+List<ChartCandle> _ohlc(List<(double, double, double, double)> bars, {double volume = 1}) => [
+  for (var i = 0; i < bars.length; i++)
+    ChartCandle(
+      timestamp: i * 60000,
+      endTimestamp: (i + 1) * 60000,
+      open: bars[i].$1,
+      high: bars[i].$2,
+      low: bars[i].$3,
+      close: bars[i].$4,
+      volume: volume,
+    ),
+];
+
 void main() {
-  bollingerTests();
-
-  test('nothing until the period has accrued, then the simple average seeds it', () {
-    final values = exponentialMovingAverage(_closes([1, 2, 3, 4, 5]), 3);
-
-    expect(values.sublist(0, 2), [null, null]);
-    expect(values[2], 2);
-    // weight 0.5: 2 + (4 - 2) * 0.5 = 3, then 3 + (5 - 3) * 0.5 = 4.
-    expect(values[3], 3);
-    expect(values[4], 4);
+  group('SMA', () {
+    test('the plain average of the window, null before it fills', () {
+      expect(simpleMovingAverage(_closes([1, 2, 3, 4, 5]), 3), [null, null, 2, 3, 4]);
+    });
   });
 
-  test('a period longer than the data yields no values', () {
-    expect(exponentialMovingAverage(_closes([1, 2]), 3), [null, null]);
+  group('EMA', () {
+    test('nothing until the period has accrued, then the simple average seeds it', () {
+      final values = exponentialMovingAverage(_closes([1, 2, 3, 4, 5]), 3);
+
+      expect(values.sublist(0, 2), [null, null]);
+      expect(values[2], 2);
+      // weight 0.5: 2 + (4 - 2) * 0.5 = 3, then 3 + (5 - 3) * 0.5 = 4.
+      expect(values[3], 3);
+      expect(values[4], 4);
+    });
+
+    test('a period longer than the data yields no values', () {
+      expect(exponentialMovingAverage(_closes([1, 2]), 3), [null, null]);
+    });
+
+    test('a flat series stays put', () {
+      final values = exponentialMovingAverage(_closes(List.filled(10, 42)), 4);
+      expect(values.sublist(3), everyElement(42));
+    });
   });
 
-  test('a flat series stays put', () {
-    final values = exponentialMovingAverage(_closes(List.filled(10, 42)), 4);
-    expect(values.sublist(3), everyElement(42));
-  });
-}
-
-void bollingerTests() {
-  test('the bands sit a deviation either side of the simple average', () {
-    final bands = bollingerBands(_closes([2, 4, 4, 4, 5, 5, 7, 9]), 8, 2);
-
-    expect(bands.sublist(0, 7), everyElement(isNull));
-    final band = bands.last!;
-    expect(band.middle, 5);
-    // Population standard deviation of this series is exactly 2.
-    expect(band.upper, closeTo(9, 1e-9));
-    expect(band.lower, closeTo(1, 1e-9));
+  group('WMA', () {
+    test('the latest close weighs the most', () {
+      // (1*1 + 2*2 + 3*3) / 6 = 14 / 6, then (2*1 + 3*2 + 4*3) / 6 = 20 / 6.
+      final values = weightedMovingAverage(_closes([1, 2, 3, 4]), 3);
+      expect(values[0], isNull);
+      expect(values[1], isNull);
+      expect(values[2], closeTo(14 / 6, 1e-9));
+      expect(values[3], closeTo(20 / 6, 1e-9));
+    });
   });
 
-  test('the window slides', () {
-    final bands = bollingerBands(_closes([1, 1, 1, 10, 10, 10]), 3, 1);
-    expect(bands[2]!.middle, 1);
-    expect(bands[2]!.upper, closeTo(1, 1e-9));
-    expect(bands[5]!.middle, 10);
-    expect(bands[5]!.lower, closeTo(10, 1e-9));
+  group('VWAP', () {
+    test('accumulates within the day and resets at midnight UTC', () {
+      const dayMs = Duration.millisecondsPerDay;
+      final candles = [
+        const ChartCandle(timestamp: dayMs - 120000, endTimestamp: dayMs - 60000, open: 10, high: 12, low: 8, close: 10, volume: 1),
+        const ChartCandle(timestamp: dayMs - 60000, endTimestamp: dayMs, open: 20, high: 22, low: 18, close: 20, volume: 3),
+        const ChartCandle(timestamp: dayMs, endTimestamp: dayMs + 60000, open: 30, high: 33, low: 27, close: 30, volume: 2),
+      ];
+      final values = volumeWeightedAveragePrice(candles);
+      expect(values[0], 10);
+      // (10 * 1 + 20 * 3) / 4
+      expect(values[1], 17.5);
+      // A new day: the running sums start over.
+      expect(values[2], 30);
+    });
+
+    test('a candle with no volume carries the running value', () {
+      final candles = [
+        const ChartCandle(timestamp: 0, endTimestamp: 60000, open: 10, high: 10, low: 10, close: 10, volume: 2),
+        const ChartCandle(timestamp: 60000, endTimestamp: 120000, open: 50, high: 50, low: 50, close: 50, volume: 0),
+      ];
+      expect(volumeWeightedAveragePrice(candles), [10, 10]);
+    });
+  });
+
+  group('Bollinger', () {
+    test('the bands sit a deviation either side of the simple average', () {
+      final bands = bollingerBands(_closes([2, 4, 4, 4, 5, 5, 7, 9]), 8, 2);
+
+      expect(bands.sublist(0, 7), everyElement(isNull));
+      final band = bands.last!;
+      expect(band.middle, 5);
+      // Population standard deviation of this series is exactly 2.
+      expect(band.upper, closeTo(9, 1e-9));
+      expect(band.lower, closeTo(1, 1e-9));
+    });
+
+    test('the window slides', () {
+      final bands = bollingerBands(_closes([1, 1, 1, 10, 10, 10]), 3, 1);
+      expect(bands[2]!.middle, 1);
+      expect(bands[2]!.upper, closeTo(1, 1e-9));
+      expect(bands[5]!.middle, 10);
+      expect(bands[5]!.lower, closeTo(10, 1e-9));
+    });
+  });
+
+  group('RSI', () {
+    test('all gains read 100, all losses 0, and the first value is the plain average', () {
+      expect(relativeStrengthIndex(_closes([1, 2, 3, 4]), 3)[3], 100);
+      expect(relativeStrengthIndex(_closes([4, 3, 2, 1]), 3)[3], 0);
+    });
+
+    test("Wilder's smoothing after the seed", () {
+      // Changes: +1, -1, +1 over the seed period, then +3.
+      // Seed: gain 2/3, loss 1/3 → RS 2 → RSI 66.67.
+      // Next: gain (2/3 * 2 + 3) / 3 = 13/9, loss (1/3 * 2 + 0) / 3 = 2/9 → RS 6.5 → RSI 86.67.
+      final values = relativeStrengthIndex(_closes([10, 11, 10, 11, 14]), 3);
+      expect(values.sublist(0, 3), everyElement(isNull));
+      expect(values[3], closeTo(100 - 100 / 3, 1e-9));
+      expect(values[4], closeTo(100 - 100 / 7.5, 1e-9));
+    });
+  });
+
+  group('MACD', () {
+    test('the fast EMA less the slow one, the signal seeded on the first MACD values', () {
+      final closes = [for (var i = 1; i <= 8; i++) i.toDouble()];
+      final values = macd(_closes(closes), 2, 3, 2);
+      final fast = exponentialMovingAverage(_closes(closes), 2);
+      final slow = exponentialMovingAverage(_closes(closes), 3);
+      // MACD exists from index 2 (the slow EMA's first value); the signal
+      // needs two of them, so the first full reading is at index 3.
+      expect(values.sublist(0, 3), everyElement(isNull));
+      final line2 = fast[2]! - slow[2]!;
+      final line3 = fast[3]! - slow[3]!;
+      expect(values[3]!.macd, closeTo(line3, 1e-9));
+      expect(values[3]!.signal, closeTo((line2 + line3) / 2, 1e-9));
+      expect(values[3]!.histogram, closeTo(line3 - (line2 + line3) / 2, 1e-9));
+    });
+  });
+
+  group('Stochastic', () {
+    test('%K is where the close sits in the window, %D its average', () {
+      final candles = _ohlc([
+        (1, 10, 0, 5), // window fills at index 2
+        (1, 10, 0, 5),
+        (1, 10, 0, 10), // raw %K 100
+        (1, 10, 0, 0), // raw 0
+        (1, 10, 0, 5), // raw 50
+        (1, 10, 0, 10), // raw 100
+      ]);
+      final values = stochastic(candles, 3, 1, 2);
+      // %K unsmoothed = raw; %D averages two: (100, 0) → 50 at index 3.
+      expect(values.sublist(0, 3), everyElement(isNull));
+      expect(values[3]!.k, 0);
+      expect(values[3]!.d, 50);
+      expect(values[5]!.k, 100);
+      expect(values[5]!.d, 75);
+    });
+
+    test('a flat window reads 50', () {
+      final values = stochastic(_closes([5, 5, 5, 5]), 3, 1, 1);
+      expect(values[3]!.k, 50);
+    });
+  });
+
+  group('Ichimoku', () {
+    test('each line is the midpoint of its window, span A the mean of the first two', () {
+      final candles = _ohlc([
+        (1, 10, 0, 5),
+        (1, 20, 10, 15),
+        (1, 30, 20, 25),
+        (1, 40, 30, 35),
+      ]);
+      final values = ichimoku(candles, 2, 3, 4);
+      expect(values.sublist(0, 3), everyElement(isNull));
+      final last = values[3]!;
+      // Conversion over the last 2: (40 + 20) / 2; base over 3: (40 + 10) / 2; span B over 4: (40 + 0) / 2.
+      expect(last.conversion, 30);
+      expect(last.base, 25);
+      expect(last.spanA, 27.5);
+      expect(last.spanB, 20);
+    });
+  });
+
+  group('ATR', () {
+    test('the true range reaches to the previous close, then smooths', () {
+      final candles = _ohlc([
+        (10, 12, 8, 10), // range 4
+        (10, 11, 9, 10), // range 2
+        (10, 20, 15, 18), // high - previous close = 10
+      ]);
+      final values = averageTrueRange(candles, 2);
+      expect(values[0], isNull);
+      expect(values[1], 3);
+      // (3 * 1 + 10) / 2
+      expect(values[2], 6.5);
+    });
+  });
+
+  group('SuperTrend', () {
+    test('trails under a rising market and flips over it when the close breaks the band', () {
+      final rising = _ohlc([for (var i = 0; i < 6; i++) (10.0 + i, 11.0 + i, 9.0 + i, 10.0 + i)]);
+      final up = superTrend(rising, 2, 1);
+      expect(up[1]!.up, isTrue);
+      expect(up.last!.up, isTrue);
+      expect(up.last!.value, lessThan(rising.last.close));
+
+      // Then a drop through the lower band.
+      final falling = [
+        ...rising,
+        const ChartCandle(timestamp: 6 * 60000, endTimestamp: 7 * 60000, open: 15, high: 15, low: 5, close: 5, volume: 1),
+      ];
+      final flipped = superTrend(falling, 2, 1);
+      expect(flipped.last!.up, isFalse);
+      expect(flipped.last!.value, greaterThan(5));
+    });
   });
 }

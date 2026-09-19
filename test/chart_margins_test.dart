@@ -26,6 +26,8 @@ ChartController _controller(ChartLabelStyle labelStyle) => ChartController(
   viewResetKey: 'BTC',
   formatPrice: (price) => price.toStringAsFixed(4),
   labelStyle: labelStyle,
+  indicators: const [],
+  colors: const ChartColors(),
 );
 
 double _textWidth(String text, TextStyle style) =>
@@ -64,6 +66,8 @@ void main() {
       viewResetKey: 'BTC',
       formatPrice: (price) => price.toStringAsFixed(4),
       labelStyle: const ChartLabelStyle(textStyle: TextStyle(fontSize: 20)),
+      indicators: const [],
+      colors: const ChartColors(),
     );
 
     expect(controller.margins.right, greaterThan(before));

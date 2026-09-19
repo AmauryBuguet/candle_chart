@@ -4,8 +4,10 @@ import 'package:responsive_builder/responsive_builder.dart';
 import '../internal/chart_controller.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_indicator.dart';
 import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
+import '../models/chart_pane_transform.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
 import '../models/chart_transform.dart';
@@ -46,7 +48,8 @@ class TradingChartController extends ChangeNotifier {
 }
 
 /// An embeddable candlestick trading chart: pan/zoom/scroll, crosshair,
-/// draggable price lines, order overlays and position P&L shading.
+/// indicators over the candles and in panes of their own, draggable price
+/// lines, order overlays and position P&L shading.
 ///
 /// The chart owns no domain data itself — everything it draws is passed in,
 /// and interaction with drawn objects (selecting/dragging a line or order)
@@ -70,6 +73,7 @@ class TradingChart extends StatefulWidget {
     required this.onDragEnd,
     this.controller,
     this.onPriceAxisChanged,
+    this.indicators = const [],
   });
 
   final List<ChartCandle> candles;
@@ -77,6 +81,11 @@ class TradingChart extends StatefulWidget {
   final List<ChartOrderLine> orderLines;
   final List<ChartPosition> positions;
   final ChartStyle style;
+
+  /// The studies drawn from the candles: overlays over them, pane
+  /// indicators in panes under them, in list order. Their series are
+  /// computed once per candle list and kept until either changes.
+  final List<ChartIndicator> indicators;
 
   /// Duration of a single candle — drives the initial/min/max zoom window.
   final Duration interval;
@@ -129,6 +138,8 @@ class _TradingChartState extends State<TradingChart> {
       viewResetKey: widget.viewResetKey,
       formatPrice: widget.formatPrice,
       labelStyle: widget.style.labelStyle,
+      indicators: widget.indicators,
+      colors: widget.style.colors,
     )..addListener(_handleControllerChanged);
     widget.controller?._attach(_controller.jumpToLive);
     _reportPriceAxisIfChanged();
@@ -148,6 +159,8 @@ class _TradingChartState extends State<TradingChart> {
       viewResetKey: widget.viewResetKey,
       formatPrice: widget.formatPrice,
       labelStyle: widget.style.labelStyle,
+      indicators: widget.indicators,
+      colors: widget.style.colors,
     );
     _reportPriceAxisIfChanged();
   }
@@ -183,11 +196,17 @@ class _TradingChartState extends State<TradingChart> {
   void _syncController(Size size) {
     final controller = widget.controller;
     if (controller == null) return;
+    final layout = _controller.layoutFor(size);
     final transform = ChartTransform(
       size: size,
       margins: _controller.margins,
       priceAxis: _controller.priceAxis,
       timeAxis: _controller.timeAxis,
+      paneSpace: layout.paneSpace,
+      panes: [
+        for (var i = 0; i < layout.paneRects.length; i++)
+          ChartPaneTransform(rect: layout.paneRects[i], axis: _controller.paneAxes[i]),
+      ],
     );
     final isLive = _controller.isLive;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -240,13 +259,16 @@ class _TradingChartState extends State<TradingChart> {
                     candles: widget.candles,
                     lines: widget.lines,
                     orderLines: widget.orderLines,
-                    margins: _controller.margins,
+                    layout: _controller.layoutFor(c.biggest),
                     priceAxis: _controller.priceAxis,
                     timeAxis: _controller.timeAxis,
                     crosshairPosition: isMobile ? null : _controller.crosshairPosition,
                     positions: widget.candles.isNotEmpty ? widget.positions : const [],
                     style: widget.style,
                     formatPrice: widget.formatPrice,
+                    overlays: [for (final o in _controller.overlays) (o, _controller.renderOf(o))],
+                    panes: [for (final p in _controller.paneIndicators) (p, _controller.renderOf(p))],
+                    paneAxes: _controller.paneAxes,
                   ),
                 ),
               ),

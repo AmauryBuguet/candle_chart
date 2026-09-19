@@ -6,11 +6,17 @@ import 'package:flutter/widgets.dart';
 
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_colors.dart';
+import '../models/chart_indicator.dart';
 import '../models/chart_label_style.dart';
 import '../models/chart_margins.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
+import 'chart_layout.dart';
 import 'event_origin.dart';
+import 'indicator_compute.dart';
+import 'indicator_render.dart';
+import 'pane_axis.dart';
 import 'price_axis_engine.dart';
 import 'time_axis_engine.dart';
 
@@ -30,14 +36,20 @@ class ChartController extends ChangeNotifier {
     required Object viewResetKey,
     required String Function(double price) formatPrice,
     required ChartLabelStyle labelStyle,
+    required List<ChartIndicator> indicators,
+    required ChartColors colors,
   }) : _interval = interval,
        _viewConfig = viewConfig,
        _candles = candles,
        _viewResetKey = viewResetKey,
        _formatPrice = formatPrice,
        _labelStyle = labelStyle,
+       _indicators = indicators,
+       _colors = colors,
        _timeAxisEngine = TimeAxisEngine(interval: interval, viewConfig: viewConfig) {
     _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
+    _recomputeIndicators();
+    _syncPanes();
     margins = _computeMargins();
   }
 
@@ -50,8 +62,11 @@ class ChartController extends ChangeNotifier {
   Object _viewResetKey;
   String Function(double price) _formatPrice;
   ChartLabelStyle _labelStyle;
+  List<ChartIndicator> _indicators;
+  ChartColors _colors;
 
   EventOrigin _eventOrigin = EventOrigin.other;
+  int? _draggedHandle;
   double? _lastHorizontalScale;
 
   TimeAxis get timeAxis => _timeAxisEngine.axis;
@@ -59,7 +74,24 @@ class ChartController extends ChangeNotifier {
   late ChartMargins margins;
   Offset? crosshairPosition;
 
+  /// The series of every indicator, computed once per candle list.
+  final Map<ChartIndicator, IndicatorRender> _renders = {};
+
+  /// Each pane's share of the plot height, the same order as [paneIndicators].
+  List<double> paneFractions = const [];
+
+  /// Each pane's value axis, fitted to what is visible.
+  List<PriceAxis> paneAxes = const [];
+
+  List<ChartOverlay> get overlays => [for (final i in _indicators) if (i is ChartOverlay) i];
+  List<ChartPaneIndicator> get paneIndicators => [for (final i in _indicators) if (i is ChartPaneIndicator) i];
+
+  IndicatorRender renderOf(ChartIndicator indicator) => _renders[indicator]!;
+
+  ChartLayout layoutFor(Size size) => ChartLayout(size: size, margins: margins, paneFractions: paneFractions);
+
   static const _candlesEquality = ListEquality<ChartCandle>();
+  static const _indicatorsEquality = ListEquality<ChartIndicator>();
 
   /// Feeds updated widget-level inputs in. Call from `didUpdateWidget`.
   ///
@@ -76,10 +108,15 @@ class ChartController extends ChangeNotifier {
     required Object viewResetKey,
     required String Function(double price) formatPrice,
     required ChartLabelStyle labelStyle,
+    required List<ChartIndicator> indicators,
+    required ChartColors colors,
   }) {
     _formatPrice = formatPrice;
     final labelStyleChanged = labelStyle != _labelStyle;
     _labelStyle = labelStyle;
+    final indicatorsChanged = !_indicatorsEquality.equals(indicators, _indicators) || colors != _colors;
+    _indicators = indicators;
+    _colors = colors;
 
     var timeAxisReset = false;
     if (interval != _interval || viewConfig != _viewConfig) {
@@ -99,19 +136,54 @@ class ChartController extends ChangeNotifier {
     final candlesChanged = !_candlesEquality.equals(candles, _candles);
     _candles = candles;
 
+    if (candlesChanged || indicatorsChanged) {
+      _recomputeIndicators();
+      _syncPanes();
+    }
+
     if (timeAxisReset || resetKeyChanged || candlesChanged) {
       final beforePrice = priceAxis;
-      _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
-      if (timeAxisReset || priceAxis != beforePrice) {
+      _refitPriceAxis();
+      if (timeAxisReset || priceAxis != beforePrice || indicatorsChanged) {
         margins = _computeMargins();
         notifyListeners();
         return;
       }
     }
-    if (labelStyleChanged) {
+    if (labelStyleChanged || indicatorsChanged) {
       margins = _computeMargins();
       notifyListeners();
     }
+  }
+
+  void _recomputeIndicators() {
+    _renders
+      ..clear()
+      ..addEntries([for (final i in _indicators) MapEntry(i, renderIndicator(i, _candles, _colors))]);
+  }
+
+  /// Keeps one height per pane across edits to the indicator list: a pane
+  /// that is still there keeps its height, a new one takes its indicator's.
+  void _syncPanes() {
+    final panes = paneIndicators;
+    final previous = _previousPanes;
+    final fractions = <double>[];
+    for (final pane in panes) {
+      final index = previous.indexOf(pane);
+      fractions.add(index != -1 ? paneFractions[index] : pane.height);
+    }
+    paneFractions = clampPaneFractions(fractions);
+    _previousPanes = panes;
+    _refitPaneAxes();
+  }
+
+  List<ChartPaneIndicator> _previousPanes = const [];
+
+  void _refitPaneAxes() {
+    paneAxes = [
+      for (final pane in paneIndicators)
+        fitPaneAxis(render: _renders[pane]!, candles: _candles, timeAxis: timeAxis),
+    ];
   }
 
   void setCrosshairPosition(Offset? position) {
@@ -127,7 +199,9 @@ class ChartController extends ChangeNotifier {
     required void Function(Coordinates pos, PriceAxis priceAxis, TimeAxis timeAxis, bool isMobile) onPointerDownInChart,
     required VoidCallback onPointerDownOutsideChart,
   }) {
-    _eventOrigin = _getEventOrigin(event.localPosition, size);
+    final layout = layoutFor(size);
+    _eventOrigin = _getEventOrigin(event.localPosition, size, layout);
+    _draggedHandle = _eventOrigin == EventOrigin.handle ? layout.handleAt(event.localPosition) : null;
     if (_eventOrigin == EventOrigin.chart) {
       final pos = _getEventPosition(event.localPosition, size);
       onPointerDownInChart(pos, priceAxis, timeAxis, isMobile);
@@ -142,16 +216,20 @@ class ChartController extends ChangeNotifier {
     Size size, {
     required bool Function(Coordinates delta, Coordinates coord, PriceAxis priceAxis) onDragUpdate,
   }) {
+    if (_eventOrigin == EventOrigin.handle) {
+      _dragHandle(event.delta.dy, size);
+      return;
+    }
     final delta = _getEventDelta(event.delta, size);
     final coord = _getEventPosition(event.localPosition, size);
-    final hasSelected = onDragUpdate(delta, coord, priceAxis);
+    final hasSelected = _eventOrigin == EventOrigin.chart && onDragUpdate(delta, coord, priceAxis);
     if (!hasSelected) {
       final beforeTime = timeAxis;
       final beforePrice = priceAxis;
-      if (_eventOrigin == EventOrigin.chart) {
+      if (_eventOrigin == EventOrigin.chart || _eventOrigin == EventOrigin.pane) {
         if (_lastHorizontalScale == null) {
           _timeAxisEngine.pan(delta.timestamp);
-          _priceAxisEngine.panIfUnAnchored(-1 * delta.price);
+          if (_eventOrigin == EventOrigin.chart) _priceAxisEngine.panIfUnAnchored(-1 * delta.price);
           // Panning changes which candles are visible, so an anchored price
           // axis needs to refit to them too — it's not just following the
           // manual pan above (which only applies while un-anchored).
@@ -165,6 +243,23 @@ class ChartController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Moving the handle above pane [i] up grows it at the expense of what is
+  /// above: the pane before it, or the price pane.
+  void _dragHandle(double dy, Size size) {
+    final i = _draggedHandle;
+    if (i == null) return;
+    final layout = layoutFor(size);
+    if (layout.plotHeight <= 0) return;
+    final delta = -dy / layout.plotHeight;
+    final fractions = [...paneFractions];
+    fractions[i] += delta;
+    if (i > 0) fractions[i - 1] -= delta;
+    final clamped = clampPaneFractions(fractions);
+    if (const ListEquality<double>().equals(clamped, paneFractions)) return;
+    paneFractions = clamped;
+    notifyListeners();
   }
 
   void onPointerSignal(PointerSignalEvent event, Size size) {
@@ -222,6 +317,7 @@ class ChartController extends ChangeNotifier {
   /// pan/zoomed it) — matches [PriceAxisEngine.recompute]'s own guard.
   void _refitPriceAxis() {
     _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
+    _refitPaneAxes();
   }
 
   void onScaleStart(ScaleStartDetails details) {
@@ -254,31 +350,28 @@ class ChartController extends ChangeNotifier {
 
   /// UTILS
 
-  EventOrigin _getEventOrigin(Offset position, Size size) {
+  EventOrigin _getEventOrigin(Offset position, Size size, ChartLayout layout) {
+    if (size.height - position.dy < margins.bottom) return EventOrigin.xScale;
+    if (layout.handleAt(position) != null) return EventOrigin.handle;
     if (size.width - position.dx < margins.right) {
-      return EventOrigin.yScale;
-    } else if (size.height - position.dy < margins.bottom) {
-      return EventOrigin.xScale;
-    } else if (position.dy > margins.top && position.dx > margins.left) {
-      return EventOrigin.chart;
-    } else {
-      return EventOrigin.other;
+      return position.dy < layout.priceRect.bottom ? EventOrigin.yScale : EventOrigin.other;
     }
+    if (layout.paneAt(position) != null) return EventOrigin.pane;
+    if (layout.priceRect.contains(position)) return EventOrigin.chart;
+    return EventOrigin.other;
   }
 
   Coordinates _getEventPosition(Offset position, Size size) {
-    final price =
-        priceAxis.start +
-        ((size.height - position.dy - margins.bottom) * priceAxis.range / (size.height - margins.top - margins.bottom));
-    final int time =
-        timeAxis.start +
-        ((position.dx - margins.left) * timeAxis.range ~/ (size.width - margins.left - margins.right));
+    final rect = layoutFor(size).priceRect;
+    final price = priceAxis.start + (rect.bottom - position.dy) * priceAxis.range / rect.height;
+    final int time = timeAxis.start + ((position.dx - rect.left) * timeAxis.range ~/ rect.width);
     return Coordinates(timestamp: time, price: price);
   }
 
   Coordinates _getEventDelta(Offset delta, Size size) {
-    final priceDelta = -1 * delta.dy * priceAxis.range / (size.height - margins.top - margins.bottom);
-    final int timeDelta = -1 * delta.dx * timeAxis.range ~/ (size.width - margins.left - margins.right);
+    final rect = layoutFor(size).priceRect;
+    final priceDelta = -1 * delta.dy * priceAxis.range / rect.height;
+    final int timeDelta = -1 * delta.dx * timeAxis.range ~/ rect.width;
     return Coordinates(timestamp: timeDelta, price: priceDelta);
   }
 
