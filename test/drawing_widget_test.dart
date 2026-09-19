@@ -106,4 +106,63 @@ void main() {
     // The tap armed the double-tap timer; let it lapse.
     await tester.pumpAndSettle();
   });
+
+  testWidgets('a host that keeps the new drawing selected and drops the tool at once is left alone', (tester) async {
+    final selected = <Object?>[];
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: _PlacingHost(onSelected: selected.add))));
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(const Offset(300, 300));
+    await tester.pump();
+    await tester.tapAt(const Offset(600, 400));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(selected, isEmpty);
+    final chart = tester.widget<TradingChart>(find.byType(TradingChart));
+    expect(chart.activeTool, isNull);
+    expect(chart.drawings.single.selected, isTrue);
+    await tester.pumpAndSettle();
+  });
+}
+
+class _PlacingHost extends StatefulWidget {
+  const _PlacingHost({required this.onSelected});
+
+  final void Function(Object? id) onSelected;
+
+  @override
+  State<_PlacingHost> createState() => _PlacingHostState();
+}
+
+class _PlacingHostState extends State<_PlacingHost> {
+  ChartDrawingTool? _tool = ChartDrawingTool.trendLine;
+  List<ChartDrawing> _drawings = const [];
+
+  @override
+  Widget build(BuildContext context) => TradingChart(
+    candles: _candles(),
+    lines: const [],
+    orderLines: const [],
+    positions: const [],
+    style: const ChartStyle(),
+    drawings: _drawings,
+    activeTool: _tool,
+    interval: const Duration(minutes: 1),
+    viewConfig: const ChartViewConfig(),
+    viewResetKey: 'BTC',
+    formatPrice: (price) => price.toStringAsFixed(1),
+    onPointerDownInChart: (_, _, _, _) {},
+    onPointerDownOutsideChart: () {},
+    onDragUpdate: (_, _, _) => false,
+    onDragEnd: () async {},
+    onDrawingCreated: (drawing) => setState(() {
+      _drawings = [drawing.copyWith(selected: true)];
+      _tool = null;
+    }),
+    onDrawingSelected: widget.onSelected,
+  );
 }

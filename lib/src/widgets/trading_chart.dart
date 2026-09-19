@@ -232,7 +232,7 @@ class _TradingChartState extends State<TradingChart> {
       colors: widget.style.colors,
     );
     _syncDrawingInputs();
-    if (widget.activeTool != oldWidget.activeTool) _controller.cancelDrawing();
+    if (widget.activeTool != oldWidget.activeTool) _controller.dropPlacement();
     _reportPriceAxisIfChanged();
   }
 

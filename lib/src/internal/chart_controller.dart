@@ -117,6 +117,10 @@ class ChartController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drops the tool's half-placed points without touching the selection or
+  /// notifying — for when the host swaps the tool, mid-build.
+  void dropPlacement() => _placed = const [];
+
   void deleteSelectedDrawing() {
     final selected = selectedDrawing;
     if (selected != null) onDrawingDeleted?.call(selected.id);
