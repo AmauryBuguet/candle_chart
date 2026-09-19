@@ -30,11 +30,10 @@ ChartController _controller(ChartLabelStyle labelStyle) => ChartController(
   colors: const ChartColors(),
 );
 
-double _textWidth(String text, TextStyle style) =>
-    (TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout()).width;
+double _textWidth(String text, TextStyle style) => (TextPainter(
+  text: TextSpan(text: text, style: style),
+  textDirection: TextDirection.ltr,
+)..layout()).width;
 
 void main() {
   test('the price axis is as wide as its longest tick, in the label style', () {

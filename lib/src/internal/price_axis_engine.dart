@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 
 import '../models/axis.dart';
@@ -45,18 +47,39 @@ class PriceAxisEngine {
     }
   }
 
-  void scale(double value) {
+  /// Zooms the axis about its middle by a pointer moved [dy] pixels over a
+  /// pane [height] tall: on a log scale the ends move by the same ratio
+  /// rather than the same amount.
+  void scaleBy(double dy, double height, {required bool logScale}) {
     anchored = false;
-    axis = axis.copyWith(start: axis.start + value, end: axis.end - value);
-  }
-
-  void pan(double value) {
-    axis = axis.copyWith(start: axis.start + value, end: axis.end + value);
-  }
-
-  void panIfUnAnchored(double value) {
-    if (!anchored) {
-      pan(value);
+    if (logScale) {
+      final factor = _logFactor(dy, height);
+      axis = PriceAxis(start: axis.start / factor, end: axis.end * factor);
+    } else {
+      final value = -dy * axis.range / height;
+      if (axis.range - 2 * value <= 0) return;
+      axis = axis.copyWith(start: axis.start + value, end: axis.end - value);
     }
+  }
+
+  /// Follows a pointer moved [dy] pixels, once the axis has been unanchored
+  /// by a zoom; an anchored axis refits to the candles instead.
+  void panBy(double dy, double height, {required bool logScale}) {
+    if (anchored) return;
+    if (logScale) {
+      final factor = _logFactor(dy, height);
+      axis = PriceAxis(start: axis.start * factor, end: axis.end * factor);
+    } else {
+      final value = dy * axis.range / height;
+      axis = axis.copyWith(start: axis.start + value, end: axis.end + value);
+    }
+  }
+
+  /// The ratio a price under the pointer moves by when the pointer moves
+  /// [dy] pixels down a log-scaled pane [height] tall.
+  double _logFactor(double dy, double height) {
+    final start = max(axis.start, 1e-12);
+    final end = max(axis.end, start * 1.0001);
+    return exp(dy / height * (log(end) - log(start)));
   }
 }

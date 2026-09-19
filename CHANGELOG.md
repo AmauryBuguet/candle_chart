@@ -1,3 +1,11 @@
+## 0.4.0
+
+* Drawings: `TradingChart.drawings` takes `ChartDrawing`s — trend line, ray, extended line, horizontal line and ray, vertical line, rectangle, parallel channel, Fibonacci retracement, text, measure — anchored in time and price. The chart hit-tests them, shows the selected one's handles, drags an anchor or the whole drawing, snaps to the candle's open, high, low or close with `magnet`, and places new ones with `activeTool`; `onDrawingCreated`, `onDrawingChanged`, `onDrawingSelected` and `onDrawingDeleted` hand every change back. `toJson`/`fromJson` serialise them. A new drawing takes `ChartColors.drawing`.
+* `ChartStyle.chartType`: candles, or a line through the closes in `ChartColors.line`.
+* `ChartViewConfig.logScale`: a logarithmic price axis, with ticks at 1, 2 and 5 of each decade. `ChartTransform.yForPrice`/`priceForY` follow it; a host doing its own axis maths must check `ChartTransform.logScale`.
+* `onNeedMoreHistory`: called with the oldest candle's timestamp when the view comes within twenty candles of it, once per oldest candle.
+* Keyboard, on desktop, once the chart has been clicked: arrows pan a tenth of the view, plus and minus zoom, Home jumps to live, Escape drops a half-placed drawing and the selection, Delete and Backspace delete the selected drawing.
+
 ## 0.3.0
 
 * Indicators are a list of value objects on the chart, `TradingChart.indicators`, in place of `ChartStyle.vpvr`, `volume`, `emas` and `bollinger`, which are gone. Each is computed once per candle list and cached against the instance.

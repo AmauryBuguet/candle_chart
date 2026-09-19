@@ -19,14 +19,18 @@ class ChartViewConfig extends Equatable {
   /// as a fraction of their range (e.g. `0.1` = 10%).
   final double priceMargin;
 
+  /// Whether the price axis is logarithmic: equal ratios take equal heights.
+  final bool logScale;
+
   const ChartViewConfig({
     this.startCandles = 100,
     this.minCandles = 4,
     this.maxCandles = 1000,
     this.rightMargin = 0.25,
     this.priceMargin = 0.1,
+    this.logScale = false,
   });
 
   @override
-  List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin];
+  List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin, logScale];
 }

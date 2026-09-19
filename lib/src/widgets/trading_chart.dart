@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:responsive_builder/responsive_builder.dart';
 
 import '../internal/chart_controller.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_drawing.dart';
 import '../models/chart_indicator.dart';
 import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
@@ -48,13 +50,21 @@ class TradingChartController extends ChangeNotifier {
 }
 
 /// An embeddable candlestick trading chart: pan/zoom/scroll, crosshair,
-/// indicators over the candles and in panes of their own, draggable price
-/// lines, order overlays and position P&L shading.
+/// indicators over the candles and in panes of their own, the user's
+/// drawings, draggable price lines, order overlays and position P&L
+/// shading.
 ///
 /// The chart owns no domain data itself — everything it draws is passed in,
 /// and interaction with drawn objects (selecting/dragging a line or order)
 /// is delegated back to the host via callbacks, so the chart never needs to
-/// know what a "line" or "order" actually represents.
+/// know what a "line" or "order" actually represents. Drawings are the one
+/// thing the chart hit-tests and drags itself, since their geometry is its
+/// own; the host still owns the list and every change comes back to it.
+///
+/// On desktop the chart takes focus on a click and answers the keyboard:
+/// Escape drops a half-placed drawing and the selection, Delete or
+/// Backspace deletes the selected drawing, the arrow keys pan, plus and
+/// minus zoom, Home jumps to live.
 class TradingChart extends StatefulWidget {
   const TradingChart({
     super.key,
@@ -74,6 +84,14 @@ class TradingChart extends StatefulWidget {
     this.controller,
     this.onPriceAxisChanged,
     this.indicators = const [],
+    this.drawings = const [],
+    this.activeTool,
+    this.magnet = true,
+    this.onDrawingCreated,
+    this.onDrawingChanged,
+    this.onDrawingSelected,
+    this.onDrawingDeleted,
+    this.onNeedMoreHistory,
   });
 
   final List<ChartCandle> candles;
@@ -100,7 +118,13 @@ class TradingChart extends StatefulWidget {
 
   /// Called on pointer-down inside the chart area; the host should hit-test
   /// [lines]/[orderLines] against [pos] and mark the closest one selected.
-  final void Function(Coordinates pos, PriceAxis priceAxis, TimeAxis timeAxis, bool isMobile) onPointerDownInChart;
+  final void Function(
+    Coordinates pos,
+    PriceAxis priceAxis,
+    TimeAxis timeAxis,
+    bool isMobile,
+  )
+  onPointerDownInChart;
 
   /// Called on pointer-down outside the chart area (deselect everything).
   final VoidCallback onPointerDownOutsideChart;
@@ -120,13 +144,57 @@ class TradingChart extends StatefulWidget {
   /// including once with its initial value.
   final void Function(PriceAxis axis)? onPriceAxisChanged;
 
+  /// The user's drawings, in the price pane. The one with `selected` set
+  /// shows its handles; the chart reports selection and edits back, and the
+  /// host replaces entries in this list.
+  final List<ChartDrawing> drawings;
+
+  /// The tool in hand: while set, taps in the price pane place its points,
+  /// and [onDrawingCreated] is called with the drawing once the last one is
+  /// down. Nothing is selected or panned meanwhile.
+  final ChartDrawingTool? activeTool;
+
+  /// Whether a placed or dragged anchor snaps to the nearest candle's open,
+  /// high, low or close when within a few pixels of it.
+  final bool magnet;
+
+  final void Function(ChartDrawing drawing)? onDrawingCreated;
+
+  /// A drawing moved — an anchor dragged, or the whole thing — as a new
+  /// instance with the same id. The host's [onDragEnd] follows the last one.
+  final void Function(ChartDrawing drawing)? onDrawingChanged;
+
+  /// A drawing was tapped, or `null` when the tap landed on nothing while
+  /// one was selected.
+  final void Function(Object? id)? onDrawingSelected;
+
+  /// Delete or Backspace with a drawing selected.
+  final void Function(Object id)? onDrawingDeleted;
+
+  /// The view is nearing the oldest candle: the host may fetch what comes
+  /// before it and pass a longer list. Called once per oldest candle.
+  final void Function(int before)? onNeedMoreHistory;
+
   @override
   State<TradingChart> createState() => _TradingChartState();
 }
 
 class _TradingChartState extends State<TradingChart> {
   late final ChartController _controller;
+  final FocusNode _focus = FocusNode(debugLabel: 'TradingChart');
   PriceAxis? _lastReportedPriceAxis;
+
+  void _syncDrawingInputs() {
+    _controller
+      ..drawings = widget.drawings
+      ..activeTool = widget.activeTool
+      ..magnet = widget.magnet
+      ..onDrawingCreated = widget.onDrawingCreated
+      ..onDrawingChanged = widget.onDrawingChanged
+      ..onDrawingSelected = widget.onDrawingSelected
+      ..onDrawingDeleted = widget.onDrawingDeleted
+      ..onNeedMoreHistory = widget.onNeedMoreHistory;
+  }
 
   @override
   void initState() {
@@ -141,6 +209,7 @@ class _TradingChartState extends State<TradingChart> {
       indicators: widget.indicators,
       colors: widget.style.colors,
     )..addListener(_handleControllerChanged);
+    _syncDrawingInputs();
     widget.controller?._attach(_controller.jumpToLive);
     _reportPriceAxisIfChanged();
   }
@@ -162,6 +231,8 @@ class _TradingChartState extends State<TradingChart> {
       indicators: widget.indicators,
       colors: widget.style.colors,
     );
+    _syncDrawingInputs();
+    if (widget.activeTool != oldWidget.activeTool) _controller.cancelDrawing();
     _reportPriceAxisIfChanged();
   }
 
@@ -169,8 +240,22 @@ class _TradingChartState extends State<TradingChart> {
   void dispose() {
     widget.controller?._detach();
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
+
+  Map<ShortcutActivator, VoidCallback> get _shortcuts => {
+    const SingleActivator(LogicalKeyboardKey.escape): _controller.cancelDrawing,
+    const SingleActivator(LogicalKeyboardKey.delete): _controller.deleteSelectedDrawing,
+    const SingleActivator(LogicalKeyboardKey.backspace): _controller.deleteSelectedDrawing,
+    const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _controller.panByFraction(-0.1),
+    const SingleActivator(LogicalKeyboardKey.arrowRight): () => _controller.panByFraction(0.1),
+    const SingleActivator(LogicalKeyboardKey.equal): () => _controller.zoomBy(0.8),
+    const SingleActivator(LogicalKeyboardKey.add): () => _controller.zoomBy(0.8),
+    const SingleActivator(LogicalKeyboardKey.minus): () => _controller.zoomBy(1.25),
+    const SingleActivator(LogicalKeyboardKey.numpadSubtract): () => _controller.zoomBy(1.25),
+    const SingleActivator(LogicalKeyboardKey.home): _controller.jumpToLive,
+  };
 
   void _handleControllerChanged() {
     setState(() {});
@@ -203,9 +288,13 @@ class _TradingChartState extends State<TradingChart> {
       priceAxis: _controller.priceAxis,
       timeAxis: _controller.timeAxis,
       paneSpace: layout.paneSpace,
+      logScale: widget.viewConfig.logScale,
       panes: [
         for (var i = 0; i < layout.paneRects.length; i++)
-          ChartPaneTransform(rect: layout.paneRects[i], axis: _controller.paneAxes[i]),
+          ChartPaneTransform(
+            rect: layout.paneRects[i],
+            axis: _controller.paneAxes[i],
+          ),
       ],
     );
     final isLive = _controller.isLive;
@@ -228,47 +317,61 @@ class _TradingChartState extends State<TradingChart> {
       builder: (context, c) {
         _syncController(c.biggest);
         final isMobile = getValueForScreenType<bool>(context: context, mobile: true, desktop: false);
-        return SizedBox.expand(
-          child: MouseRegion(
-            onEnter: _handleHover,
-            onHover: _handleHover,
-            onExit: (_) => _controller.setCrosshairPosition(null),
-            child: Listener(
-              onPointerDown: (event) => _controller.onPointerDown(
-                event,
-                c.biggest,
-                isMobile,
-                onPointerDownInChart: widget.onPointerDownInChart,
-                onPointerDownOutsideChart: widget.onPointerDownOutsideChart,
-              ),
-              onPointerMove: (event) => _controller.onPointerMove(event, c.biggest, onDragUpdate: widget.onDragUpdate),
-              onPointerUp: (event) async {
-                if (!isMobile) {
-                  _controller.setCrosshairPosition(event.localPosition);
-                }
-                await widget.onDragEnd();
-              },
-              onPointerSignal: (event) => _controller.onPointerSignal(event, c.biggest),
-              child: GestureDetector(
-                onDoubleTap: _controller.onDoubleTap,
-                onScaleUpdate: (details) => _controller.onScaleUpdate(details, c.biggest),
-                onScaleStart: _controller.onScaleStart,
-                onScaleEnd: _controller.onScaleEnd,
-                child: CustomPaint(
-                  painter: ChartPainter(
-                    candles: widget.candles,
-                    lines: widget.lines,
-                    orderLines: widget.orderLines,
-                    layout: _controller.layoutFor(c.biggest),
-                    priceAxis: _controller.priceAxis,
-                    timeAxis: _controller.timeAxis,
-                    crosshairPosition: isMobile ? null : _controller.crosshairPosition,
-                    positions: widget.candles.isNotEmpty ? widget.positions : const [],
-                    style: widget.style,
-                    formatPrice: widget.formatPrice,
-                    overlays: [for (final o in _controller.overlays) (o, _controller.renderOf(o))],
-                    panes: [for (final p in _controller.paneIndicators) (p, _controller.renderOf(p))],
-                    paneAxes: _controller.paneAxes,
+        return CallbackShortcuts(
+          bindings: _shortcuts,
+          child: Focus(
+            focusNode: _focus,
+            child: SizedBox.expand(
+              child: MouseRegion(
+                onEnter: _handleHover,
+                onHover: _handleHover,
+                onExit: (_) => _controller.setCrosshairPosition(null),
+                child: Listener(
+                  onPointerDown: (event) {
+                    _focus.requestFocus();
+                    _controller.onPointerDown(
+                      event,
+                      c.biggest,
+                      isMobile,
+                      onPointerDownInChart: widget.onPointerDownInChart,
+                      onPointerDownOutsideChart: widget.onPointerDownOutsideChart,
+                    );
+                  },
+                  onPointerMove: (event) =>
+                      _controller.onPointerMove(event, c.biggest, onDragUpdate: widget.onDragUpdate),
+                  onPointerUp: (event) async {
+                    _controller.endDrawingDrag();
+                    if (!isMobile) {
+                      _controller.setCrosshairPosition(event.localPosition);
+                    }
+                    await widget.onDragEnd();
+                  },
+                  onPointerSignal: (event) => _controller.onPointerSignal(event, c.biggest),
+                  child: GestureDetector(
+                    onDoubleTap: _controller.onDoubleTap,
+                    onScaleUpdate: (details) => _controller.onScaleUpdate(details, c.biggest),
+                    onScaleStart: _controller.onScaleStart,
+                    onScaleEnd: _controller.onScaleEnd,
+                    child: CustomPaint(
+                      painter: ChartPainter(
+                        candles: widget.candles,
+                        lines: widget.lines,
+                        orderLines: widget.orderLines,
+                        layout: _controller.layoutFor(c.biggest),
+                        priceAxis: _controller.priceAxis,
+                        timeAxis: _controller.timeAxis,
+                        crosshairPosition: isMobile ? null : _controller.crosshairPosition,
+                        positions: widget.candles.isNotEmpty ? widget.positions : const [],
+                        style: widget.style,
+                        formatPrice: widget.formatPrice,
+                        overlays: [for (final o in _controller.overlays) (o, _controller.renderOf(o))],
+                        panes: [for (final p in _controller.paneIndicators) (p, _controller.renderOf(p))],
+                        paneAxes: _controller.paneAxes,
+                        logScale: widget.viewConfig.logScale,
+                        drawings: widget.drawings,
+                        placing: isMobile ? null : _controller.placingFor(c.biggest),
+                      ),
+                    ),
                   ),
                 ),
               ),

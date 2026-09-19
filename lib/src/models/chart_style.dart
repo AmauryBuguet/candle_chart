@@ -3,6 +3,9 @@ import 'package:equatable/equatable.dart';
 import 'chart_colors.dart';
 import 'chart_label_style.dart';
 
+/// How the price series is drawn.
+enum ChartType { candles, line }
+
 /// Everything about how the chart looks: the crosshair and grid, the candle
 /// bodies, colours and label styling. What is drawn from the candles is the
 /// chart's `indicators`; behaviour (pan/zoom bounds) is `ChartViewConfig`,
@@ -10,6 +13,7 @@ import 'chart_label_style.dart';
 class ChartStyle extends Equatable {
   /// Creates a new instance of [ChartStyle].
   const ChartStyle({
+    this.chartType = ChartType.candles,
     this.crosshair = true,
     this.grid = true,
     this.filledUpCandles = false,
@@ -17,6 +21,9 @@ class ChartStyle extends Equatable {
     this.colors = const ChartColors(),
     this.labelStyle = const ChartLabelStyle(),
   });
+
+  /// Candles, or a line through the closes in `ChartColors.line`.
+  final ChartType chartType;
 
   /// Whether to show the crosshair cursor.
   final bool crosshair;
@@ -38,6 +45,7 @@ class ChartStyle extends Equatable {
 
   /// Returns a copy of this [ChartStyle] with optional new values.
   ChartStyle copyWith({
+    ChartType? chartType,
     bool? crosshair,
     bool? grid,
     bool? filledUpCandles,
@@ -46,6 +54,7 @@ class ChartStyle extends Equatable {
     ChartLabelStyle? labelStyle,
   }) {
     return ChartStyle(
+      chartType: chartType ?? this.chartType,
       crosshair: crosshair ?? this.crosshair,
       grid: grid ?? this.grid,
       filledUpCandles: filledUpCandles ?? this.filledUpCandles,
@@ -57,6 +66,7 @@ class ChartStyle extends Equatable {
 
   @override
   List<Object?> get props => [
+    chartType,
     crosshair,
     grid,
     colors,

@@ -68,7 +68,10 @@ void main() {
       viewResetKey: 'BTC',
       formatPrice: (price) => price.toStringAsFixed(1),
       labelStyle: const ChartLabelStyle(),
-      indicators: [const ChartRsi(color: Colors.blue, height: 0.3), const ChartVolume(height: 0.1)],
+      indicators: [
+        const ChartRsi(color: Colors.blue, height: 0.3),
+        const ChartVolume(height: 0.1),
+      ],
       colors: const ChartColors(),
     );
     // Same volume indicator? No — its height changed, so it is a new one.

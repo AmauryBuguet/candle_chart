@@ -5,6 +5,7 @@ library;
 export 'src/models/axis.dart' show Axis, PriceAxis, TimeAxis;
 export 'src/models/chart_candle.dart';
 export 'src/models/chart_colors.dart';
+export 'src/models/chart_drawing.dart';
 export 'src/models/chart_indicator.dart';
 export 'src/models/chart_label_style.dart';
 export 'src/models/chart_line.dart';

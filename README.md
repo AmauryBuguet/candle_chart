@@ -10,8 +10,19 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   (`ChartVolume`, `ChartRsi`, `ChartMacd`, `ChartStochastic`). Panes stack in
   list order with a drag handle above each; `ChartTransform.panes` tells a
   host where they are.
-- Pan (drag), wheel zoom, pinch zoom, and double-tap to reset/anchor the
-  price axis.
+- Drawings (`ChartDrawing`): trend line, ray, extended line, horizontal
+  line and ray, vertical line, rectangle, parallel channel, Fibonacci
+  retracement, text and measure, anchored in time and price. The chart
+  hit-tests, selects and drags them, snaps anchors to OHLC with the magnet,
+  places new ones with `activeTool`, and reports every change back through
+  callbacks; `toJson`/`fromJson` carry them wherever the host keeps them.
+- Candles or a line through the closes (`ChartStyle.chartType`); a linear or
+  logarithmic price axis (`ChartViewConfig.logScale`).
+- Pan (drag), wheel zoom, pinch zoom, double-tap to reset/anchor the price
+  axis, and on desktop the keyboard: arrows pan, plus and minus zoom, Home
+  jumps to live, Escape and Delete act on drawings.
+- `onNeedMoreHistory`: told the oldest candle's timestamp when the view
+  nears it, once, so the host can fetch what comes before.
 - Optional crosshair with time/price labels on hover.
 - Draggable horizontal price lines (`ChartLine`) and order overlays
   (`ChartOrderLine`, drawn from their placement time with a "ghost" line back

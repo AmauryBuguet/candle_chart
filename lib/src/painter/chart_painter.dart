@@ -5,15 +5,20 @@ import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../internal/chart_layout.dart';
+import '../internal/drawing_geometry.dart';
 import '../internal/indicator_render.dart';
+import '../internal/price_scale.dart' as scale;
 import '../internal/timesteps.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import '../models/chart_drawing.dart';
 import '../models/chart_indicator.dart';
 import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
+import 'dashes.dart';
+import 'drawing_painter.dart';
 import 'position_samples.dart';
 import 'series_painter.dart';
 
@@ -46,6 +51,9 @@ class ChartPainter extends CustomPainter {
     this.overlays = const [],
     this.panes = const [],
     this.paneAxes = const [],
+    this.logScale = false,
+    this.drawings = const [],
+    this.placing,
   });
 
   final List<ChartCandle> candles;
@@ -66,6 +74,15 @@ class ChartPainter extends CustomPainter {
 
   /// One value axis per entry of [panes].
   final List<PriceAxis> paneAxes;
+
+  /// Whether the price pane's axis is logarithmic.
+  final bool logScale;
+
+  /// The user's drawings, in the price pane.
+  final List<ChartDrawing> drawings;
+
+  /// The drawing being placed, its last point following the pointer.
+  final ChartDrawing? placing;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -93,7 +110,7 @@ class ChartPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawRect(Offset.zero & size, backgroundPaint);
 
-    _drawValueAxis(canvas, chartRect, priceAxis, formatPrice);
+    _drawValueAxis(canvas, chartRect, priceAxis, formatPrice, logScale: logScale);
     final dateFormat = _drawTimeAxis(canvas);
 
     for (final (overlay, _) in overlays) {
@@ -102,8 +119,11 @@ class ChartPainter extends CustomPainter {
       }
     }
 
-    // Draw candles
-    _drawCandles(canvas, chartRect, firstIndex, effectiveEndIndex);
+    if (style.chartType == ChartType.line) {
+      _drawCloseLine(canvas, chartRect, firstIndex, effectiveEndIndex);
+    } else {
+      _drawCandles(canvas, chartRect, firstIndex, effectiveEndIndex);
+    }
 
     // Studies sit over the candles but under the trade objects.
     final intervalMs = candles.isEmpty ? 1 : candles.first.endTimestamp - candles.first.timestamp;
@@ -126,6 +146,21 @@ class ChartPainter extends CustomPainter {
 
     // Draw current position
     _drawPositions(canvas, chartRect);
+
+    if (drawings.isNotEmpty || placing != null) {
+      final painter = DrawingPainter(
+        canvas: canvas,
+        projection: projectionFor(chartRect),
+        textStyle: style.labelStyle.textStyle,
+        formatPrice: formatPrice,
+        intervalMs: intervalMs,
+        handleFill: style.colors.background,
+      );
+      for (final drawing in drawings) {
+        painter.draw(drawing);
+      }
+      if (placing != null) painter.draw(placing!);
+    }
 
     for (var i = 0; i < panes.length; i++) {
       final (pane, render) = panes[i];
@@ -151,6 +186,15 @@ class ChartPainter extends CustomPainter {
       _drawCrosshair(canvas, position, candles.firstOrNull, dateFormat, chartRect);
     }
   }
+
+  /// The price pane's mapping, for drawing geometry.
+  DrawingProjection projectionFor(Rect chartRect) => DrawingProjection(
+    rect: chartRect,
+    xForTime: (t) => _getXPositionFromTime(t, chartRect),
+    yForPrice: (p) => _getYPositionFromPrice(p, chartRect),
+    timeForX: (x) => _getTimeFromXPosition(x: x, chartRect: chartRect, axis: timeAxis),
+    priceForY: (y) => _getPriceFromYPosition(y: y, chartRect: chartRect, axis: priceAxis),
+  );
 
   /// Every overlay's series as one render, so fills go under every line
   /// rather than over the lines of the overlays before them. A band indexes
@@ -189,7 +233,13 @@ class ChartPainter extends CustomPainter {
     for (final level in levels) {
       if (level < axis.start || level > axis.end) continue;
       final y = rect.top + (1 - (level - axis.start) / axis.range) * rect.height;
-      _drawDashedLine(canvas: canvas, p1: Offset(rect.left, y), p2: Offset(rect.right, y), pattern: [4, 4], paint: paint);
+      drawDashedLine(
+        canvas: canvas,
+        p1: Offset(rect.left, y),
+        p2: Offset(rect.right, y),
+        pattern: [4, 4],
+        paint: paint,
+      );
     }
   }
 
@@ -304,7 +354,7 @@ class ChartPainter extends CustomPainter {
         );
         final y = _getYPositionFromPrice(order.newPrice, chartRect);
 
-        _drawDashedLine(
+        drawDashedLine(
           canvas: canvas,
           p1: Offset(isEditing ? chartRect.left : x, y),
           p2: Offset(chartRect.right, y),
@@ -316,7 +366,7 @@ class ChartPainter extends CustomPainter {
 
         if (isEditing && order.originalPrice >= priceAxis.start && order.originalPrice <= priceAxis.end) {
           final oldY = _getYPositionFromPrice(order.originalPrice, chartRect);
-          _drawDashedLine(
+          drawDashedLine(
             canvas: canvas,
             p1: Offset(x, oldY),
             p2: Offset(chartRect.right, oldY),
@@ -335,7 +385,7 @@ class ChartPainter extends CustomPainter {
     final double timeScale = chartRect.width / timeAxis.range;
 
     double getX(int t) => chartRect.left + (t - timeAxis.start) * timeScale;
-    double getY(double p) => chartRect.top + (1 - (p - priceAxis.start) / priceAxis.range) * chartRect.height;
+    double getY(double p) => _getYPositionFromPrice(p, chartRect);
 
     for (final position in positions) {
       final bool isOpen = position.exit == null;
@@ -508,6 +558,32 @@ class ChartPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// The closes joined up, the visible ones plus one either side.
+  void _drawCloseLine(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
+    if (firstIndex == -1 || effectiveEndIndex == -1) return;
+    canvas.save();
+    canvas.clipRect(chartRect);
+    final path = Path();
+    for (int i = max(0, firstIndex - 1); i < min(candles.length, effectiveEndIndex + 1); i++) {
+      final x = _getXPositionFromTime(candles[i].timestamp, chartRect);
+      final y = _getYPositionFromPrice(candles[i].close, chartRect);
+      if (i == max(0, firstIndex - 1)) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeJoin = StrokeJoin.round
+        ..color = style.colors.line,
+    );
+    canvas.restore();
+  }
+
   /// Renders all visible candles.
   void _drawCandles(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
     if (firstIndex == -1 || effectiveEndIndex == -1) return;
@@ -581,11 +657,19 @@ class ChartPainter extends CustomPainter {
   /// One pane's value ticks: a grid line across it and a label in the right
   /// gutter, clipped to the pane so a tick at its edge does not stray into
   /// the next.
-  void _drawValueAxis(Canvas canvas, Rect rect, PriceAxis axis, String Function(double) format) {
-    final ticks = _generateNicePriceTicks(axis.start, axis.end, rect.height);
+  void _drawValueAxis(
+    Canvas canvas,
+    Rect rect,
+    PriceAxis axis,
+    String Function(double) format, {
+    bool logScale = false,
+  }) {
+    final ticks = logScale
+        ? _generateLogPriceTicks(axis.start, axis.end, rect.height)
+        : _generateNicePriceTicks(axis.start, axis.end, rect.height);
     final gridPaint = _gridPaint;
     for (final tick in ticks) {
-      final y = rect.top + (1 - (tick - axis.start) / axis.range) * rect.height;
+      final y = scale.yForPrice(tick, axis, rect, logScale: logScale);
       if (style.grid) canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(text: format(tick), style: style.labelStyle.textStyle),
@@ -630,14 +714,14 @@ class ChartPainter extends CustomPainter {
       dx = _getXPositionFromTime(updatedTime, chartRect);
     }
 
-    _drawDashedLine(
+    drawDashedLine(
       canvas: canvas,
       p1: Offset(chartRect.left, position.dy),
       p2: Offset(chartRect.right, position.dy),
       pattern: [10.0, 10.0],
       paint: paint,
     );
-    _drawDashedLine(
+    drawDashedLine(
       canvas: canvas,
       p1: Offset(dx, layout.plotTop),
       p2: Offset(dx, layout.plotBottom),
@@ -671,7 +755,11 @@ class ChartPainter extends CustomPainter {
     if (paneIndex == null) {
       priceText = formatPrice(_getPriceFromYPosition(y: position.dy, chartRect: chartRect, axis: priceAxis));
     } else {
-      final value = _getPriceFromYPosition(y: position.dy, chartRect: layout.paneRects[paneIndex], axis: paneAxes[paneIndex]);
+      final value = _getPriceFromYPosition(
+        y: position.dy,
+        chartRect: layout.paneRects[paneIndex],
+        axis: paneAxes[paneIndex],
+      );
       priceText = panes[paneIndex].$1.formatValue(value);
     }
     final pricePainter = TextPainter(
@@ -707,6 +795,28 @@ class ChartPainter extends CustomPainter {
       final rawTick = i * step;
       ticks.add(_cleanFloat(rawTick));
     }
+    return ticks;
+  }
+
+  /// Ticks at 1, 2 and 5 of each decade the axis spans, thinned to the
+  /// decades alone when they would crowd, and the linear ticks when the
+  /// range is too narrow to hold two of them.
+  List<double> _generateLogPriceTicks(double start, double end, double chartHeight) {
+    if (start <= 0) return _generateNicePriceTicks(start, end, chartHeight);
+    final ticks = <double>[];
+    final lowDecade = (log(start) / ln10).floor();
+    final highDecade = (log(end) / ln10).ceil();
+    for (var k = lowDecade; k <= highDecade; k++) {
+      for (final m in const [1, 2, 5]) {
+        final tick = m * pow(10, k).toDouble();
+        if (tick >= start && tick <= end) ticks.add(_cleanFloat(tick));
+      }
+    }
+    final maxTicks = (chartHeight / style.labelStyle.minSpacingPxPriceAxis).floor().clamp(2, 100);
+    if (ticks.length > maxTicks) {
+      ticks.removeWhere((t) => (log(t) / ln10) % 1 != 0);
+    }
+    if (ticks.length < 2) return _generateNicePriceTicks(start, end, chartHeight);
     return ticks;
   }
 
@@ -820,33 +930,9 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  /// Draws a dashed line from [p1] to [p2] with given dash [pattern].
-  void _drawDashedLine({
-    required Canvas canvas,
-    required Offset p1,
-    required Offset p2,
-    required List<double> pattern,
-    required Paint paint,
-  }) {
-    assert(pattern.length.isEven);
-    final distance = (p2 - p1).distance;
-    final normalizedPattern = pattern.map((width) => width / distance).toList();
-    final points = <Offset>[];
-    double t = 0;
-    int i = 0;
-    while (t < 1) {
-      points.add(Offset.lerp(p1, p2, t)!);
-      t += normalizedPattern[i++]; // dashWidth
-      points.add(Offset.lerp(p1, p2, t.clamp(0, 1))!);
-      t += normalizedPattern[i++]; // dashSpace
-      i %= normalizedPattern.length;
-    }
-    canvas.drawPoints(PointMode.lines, points, paint);
-  }
-
   /// Converts a price to Y coordinate.
   double _getYPositionFromPrice(double price, Rect chartRect) {
-    return chartRect.top + (1 - (price - priceAxis.start) / priceAxis.range) * chartRect.height;
+    return scale.yForPrice(price, priceAxis, chartRect, logScale: logScale);
   }
 
   /// Converts a timestamp to X coordinate.
@@ -860,8 +946,7 @@ class ChartPainter extends CustomPainter {
   }
 
   double _getPriceFromYPosition({required double y, required Rect chartRect, required PriceAxis axis}) {
-    final yRatio = 1 - (y - chartRect.top) / chartRect.height;
-    return axis.start + axis.range * yRatio;
+    return scale.priceForY(y, axis, chartRect, logScale: logScale && identical(axis, priceAxis));
   }
 
   @override
@@ -877,6 +962,9 @@ class ChartPainter extends CustomPainter {
         oldDelegate.overlays != overlays ||
         oldDelegate.panes != panes ||
         oldDelegate.paneAxes != paneAxes ||
-        oldDelegate.layout != layout;
+        oldDelegate.layout != layout ||
+        oldDelegate.logScale != logScale ||
+        oldDelegate.drawings != drawings ||
+        oldDelegate.placing != placing;
   }
 }

@@ -7,17 +7,20 @@ import 'package:flutter/widgets.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
 import '../models/chart_colors.dart';
+import '../models/chart_drawing.dart';
 import '../models/chart_indicator.dart';
 import '../models/chart_label_style.dart';
 import '../models/chart_margins.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
 import 'chart_layout.dart';
+import 'drawing_geometry.dart';
 import 'event_origin.dart';
 import 'indicator_compute.dart';
 import 'indicator_render.dart';
 import 'pane_axis.dart';
 import 'price_axis_engine.dart';
+import 'price_scale.dart';
 import 'time_axis_engine.dart';
 
 /// Owns a single chart's view interaction: pan, zoom (wheel + pinch),
@@ -69,6 +72,155 @@ class ChartController extends ChangeNotifier {
   int? _draggedHandle;
   double? _lastHorizontalScale;
 
+  /// Told the timestamp of the oldest candle when the view nears it, once
+  /// per oldest candle, so the host can fetch what comes before.
+  void Function(int before)? onNeedMoreHistory;
+  int? _historyRequestedBefore;
+
+  /// The host's drawings and the tool in hand, fed from the widget.
+  List<ChartDrawing> drawings = const [];
+  ChartDrawingTool? activeTool;
+  bool magnet = true;
+  void Function(ChartDrawing drawing)? onDrawingCreated;
+  void Function(ChartDrawing drawing)? onDrawingChanged;
+  void Function(Object? id)? onDrawingSelected;
+  void Function(Object id)? onDrawingDeleted;
+
+  /// The points placed so far with [activeTool].
+  List<Coordinates> _placed = const [];
+
+  /// The drawing under a pressed pointer: which one, which anchor (none for
+  /// its body), and where the pointer went down.
+  ({ChartDrawing original, int? anchor, Coordinates from})? _dragging;
+
+  ChartDrawing? get selectedDrawing => drawings.where((d) => d.selected).firstOrNull;
+
+  /// The drawing being placed, its next point following the pointer, or
+  /// nothing when no tool is in hand or no point is down yet.
+  ChartDrawing? placingFor(Size size) {
+    final tool = activeTool;
+    if (tool == null || _placed.isEmpty) return null;
+    final pointer = crosshairPosition;
+    final next = pointer == null ? _placed.last : _snapped(_getEventPosition(pointer, size), size);
+    final points = [..._placed, for (var i = _placed.length; i < tool.pointCount; i++) next];
+    return tool.create(id: '_placing', points: points, color: _colors.drawing);
+  }
+
+  /// Ends whatever the pointer was doing to a drawing; the host commits on
+  /// its own `onDragEnd`.
+  void endDrawingDrag() => _dragging = null;
+
+  /// Drops the tool's half-placed points and the selection.
+  void cancelDrawing() {
+    _placed = const [];
+    if (selectedDrawing != null) onDrawingSelected?.call(null);
+    notifyListeners();
+  }
+
+  void deleteSelectedDrawing() {
+    final selected = selectedDrawing;
+    if (selected != null) onDrawingDeleted?.call(selected.id);
+  }
+
+  DrawingProjection projectionFor(Size size) {
+    final rect = layoutFor(size).priceRect;
+    return DrawingProjection(
+      rect: rect,
+      xForTime: (t) => rect.left + (t - timeAxis.start) / timeAxis.range * rect.width,
+      yForPrice: (p) => yForPrice(p, priceAxis, rect, logScale: _viewConfig.logScale),
+      timeForX: (x) => timeAxis.start + ((x - rect.left) / rect.width * timeAxis.range).round(),
+      priceForY: (y) => priceForY(y, priceAxis, rect, logScale: _viewConfig.logScale),
+    );
+  }
+
+  /// Whether a pointer going down at [position] was for a drawing: placing
+  /// a point with the tool in hand, or grabbing one to select or move it.
+  bool _drawingPointerDown(Offset position, Size size) {
+    final tool = activeTool;
+    if (tool != null) {
+      _placed = [..._placed, _snapped(_getEventPosition(position, size), size)];
+      if (_placed.length == tool.pointCount) {
+        onDrawingCreated?.call(
+          tool.create(id: 'drawing-${DateTime.now().microsecondsSinceEpoch}', points: _placed, color: _colors.drawing),
+        );
+        _placed = const [];
+      }
+      notifyListeners();
+      return true;
+    }
+    final projection = projectionFor(size);
+    final selected = selectedDrawing;
+    if (selected != null && !selected.locked) {
+      final hit = hitTestDrawing(selected, position, projection, handles: true, textSize: _textSize);
+      if (hit != null) {
+        _dragging = (original: selected, anchor: hit.anchor, from: projection.coordinatesOf(position));
+        return true;
+      }
+    }
+    for (final drawing in drawings.reversed) {
+      if (hitTestDrawing(drawing, position, projection, handles: false, textSize: _textSize) == null) continue;
+      if (!drawing.locked) {
+        _dragging = (original: drawing, anchor: null, from: projection.coordinatesOf(position));
+      }
+      if (!drawing.selected) onDrawingSelected?.call(drawing.id);
+      return true;
+    }
+    if (selected != null) onDrawingSelected?.call(null);
+    return false;
+  }
+
+  /// Moves the grabbed anchor to the pointer, or the whole drawing by how
+  /// far the pointer has come since it went down.
+  bool _drawingPointerMove(Offset position, Size size) {
+    final drag = _dragging;
+    if (drag == null) return false;
+    final projection = projectionFor(size);
+    final now = projection.coordinatesOf(position);
+    final List<Coordinates> points;
+    if (drag.anchor != null) {
+      points = [...drag.original.points];
+      points[drag.anchor!] = _snapped(now, size);
+    } else {
+      final dt = now.timestamp - drag.from.timestamp;
+      final ratio = _viewConfig.logScale && drag.from.price > 0 ? now.price / drag.from.price : null;
+      final dp = now.price - drag.from.price;
+      points = [
+        for (final p in drag.original.points)
+          Coordinates(timestamp: p.timestamp + dt, price: ratio != null ? p.price * ratio : p.price + dp),
+      ];
+    }
+    onDrawingChanged?.call(drag.original.copyWith(points: points));
+    return true;
+  }
+
+  /// With the magnet on, a point within a few pixels of the candle's open,
+  /// high, low or close lands exactly on it, at the candle's own time.
+  Coordinates _snapped(Coordinates c, Size size) {
+    if (!magnet || _candles.isEmpty) return c;
+    final interval = _interval.inMilliseconds;
+    final index = _candles.indexWhere((k) => k.timestamp + interval > c.timestamp);
+    if (index == -1 || _candles[index].timestamp > c.timestamp) return c;
+    final candle = _candles[index];
+    final projection = projectionFor(size);
+    final y = projection.yForPrice(c.price);
+    double? best;
+    var bestDistance = 10.0;
+    for (final level in [candle.open, candle.high, candle.low, candle.close]) {
+      final distance = (projection.yForPrice(level) - y).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = level;
+      }
+    }
+    if (best == null) return c;
+    return Coordinates(timestamp: candle.timestamp, price: best);
+  }
+
+  Size _textSize(ChartText text) => (TextPainter(
+    text: TextSpan(text: text.text, style: _labelStyle.textStyle),
+    textDirection: TextDirection.ltr,
+  )..layout()).size;
+
   TimeAxis get timeAxis => _timeAxisEngine.axis;
   PriceAxis get priceAxis => _priceAxisEngine.axis;
   late ChartMargins margins;
@@ -83,8 +235,14 @@ class ChartController extends ChangeNotifier {
   /// Each pane's value axis, fitted to what is visible.
   List<PriceAxis> paneAxes = const [];
 
-  List<ChartOverlay> get overlays => [for (final i in _indicators) if (i is ChartOverlay) i];
-  List<ChartPaneIndicator> get paneIndicators => [for (final i in _indicators) if (i is ChartPaneIndicator) i];
+  List<ChartOverlay> get overlays => [
+    for (final i in _indicators)
+      if (i is ChartOverlay) i,
+  ];
+  List<ChartPaneIndicator> get paneIndicators => [
+    for (final i in _indicators)
+      if (i is ChartPaneIndicator) i,
+  ];
 
   IndicatorRender renderOf(ChartIndicator indicator) => _renders[indicator]!;
 
@@ -140,6 +298,7 @@ class ChartController extends ChangeNotifier {
       _recomputeIndicators();
       _syncPanes();
     }
+    if (candlesChanged) _requestHistoryIfNeeded();
 
     if (timeAxisReset || resetKeyChanged || candlesChanged) {
       final beforePrice = priceAxis;
@@ -154,6 +313,18 @@ class ChartController extends ChangeNotifier {
       margins = _computeMargins();
       notifyListeners();
     }
+  }
+
+  /// The view is within twenty candles of the oldest one, or past it: ask
+  /// for more, unless already asked for this same oldest candle.
+  void _requestHistoryIfNeeded() {
+    final callback = onNeedMoreHistory;
+    if (callback == null || _candles.isEmpty) return;
+    final oldest = _candles.first.timestamp;
+    if (timeAxis.start > oldest + 20 * _interval.inMilliseconds) return;
+    if (_historyRequestedBefore == oldest) return;
+    _historyRequestedBefore = oldest;
+    callback(oldest);
   }
 
   void _recomputeIndicators() {
@@ -181,8 +352,7 @@ class ChartController extends ChangeNotifier {
 
   void _refitPaneAxes() {
     paneAxes = [
-      for (final pane in paneIndicators)
-        fitPaneAxis(render: _renders[pane]!, candles: _candles, timeAxis: timeAxis),
+      for (final pane in paneIndicators) fitPaneAxis(render: _renders[pane]!, candles: _candles, timeAxis: timeAxis),
     ];
   }
 
@@ -203,6 +373,10 @@ class ChartController extends ChangeNotifier {
     _eventOrigin = _getEventOrigin(event.localPosition, size, layout);
     _draggedHandle = _eventOrigin == EventOrigin.handle ? layout.handleAt(event.localPosition) : null;
     if (_eventOrigin == EventOrigin.chart) {
+      if (_drawingPointerDown(event.localPosition, size)) {
+        _eventOrigin = EventOrigin.other;
+        return;
+      }
       final pos = _getEventPosition(event.localPosition, size);
       onPointerDownInChart(pos, priceAxis, timeAxis, isMobile);
     } else {
@@ -220,23 +394,28 @@ class ChartController extends ChangeNotifier {
       _dragHandle(event.delta.dy, size);
       return;
     }
+    if (_drawingPointerMove(event.localPosition, size)) return;
     final delta = _getEventDelta(event.delta, size);
     final coord = _getEventPosition(event.localPosition, size);
     final hasSelected = _eventOrigin == EventOrigin.chart && onDragUpdate(delta, coord, priceAxis);
     if (!hasSelected) {
       final beforeTime = timeAxis;
       final beforePrice = priceAxis;
+      final height = layoutFor(size).priceRect.height;
       if (_eventOrigin == EventOrigin.chart || _eventOrigin == EventOrigin.pane) {
         if (_lastHorizontalScale == null) {
           _timeAxisEngine.pan(delta.timestamp);
-          if (_eventOrigin == EventOrigin.chart) _priceAxisEngine.panIfUnAnchored(-1 * delta.price);
+          if (_eventOrigin == EventOrigin.chart) {
+            _priceAxisEngine.panBy(event.delta.dy, height, logScale: _viewConfig.logScale);
+          }
           // Panning changes which candles are visible, so an anchored price
           // axis needs to refit to them too — it's not just following the
           // manual pan above (which only applies while un-anchored).
           _refitPriceAxis();
+          _requestHistoryIfNeeded();
         }
       } else if (_eventOrigin == EventOrigin.yScale) {
-        _priceAxisEngine.scale(delta.price);
+        _priceAxisEngine.scaleBy(event.delta.dy, height, logScale: _viewConfig.logScale);
       }
       if (timeAxis != beforeTime || priceAxis != beforePrice) {
         margins = _computeMargins();
@@ -272,6 +451,7 @@ class ChartController extends ChangeNotifier {
       final beforePrice = priceAxis;
       _timeAxisEngine.scale(offset, percent);
       _refitPriceAxis();
+      _requestHistoryIfNeeded();
       if (timeAxis != beforeTime || priceAxis != beforePrice) {
         margins = _computeMargins();
         notifyListeners();
@@ -281,6 +461,30 @@ class ChartController extends ChangeNotifier {
 
   /// Whether the visible window still includes now.
   bool get isLive => _timeAxisEngine.isLive;
+
+  /// Slides the view by [fraction] of its width, right when positive.
+  void panByFraction(double fraction) {
+    final beforeTime = timeAxis;
+    _timeAxisEngine.pan((timeAxis.range * fraction).round());
+    _refitPriceAxis();
+    _requestHistoryIfNeeded();
+    if (timeAxis != beforeTime) {
+      margins = _computeMargins();
+      notifyListeners();
+    }
+  }
+
+  /// Zooms the view about its middle, in when [factor] is under one.
+  void zoomBy(double factor) {
+    final beforeTime = timeAxis;
+    _timeAxisEngine.scale((timeAxis.range * (factor - 1)).round(), 0.5);
+    _refitPriceAxis();
+    _requestHistoryIfNeeded();
+    if (timeAxis != beforeTime) {
+      margins = _computeMargins();
+      notifyListeners();
+    }
+  }
 
   /// Brings the view back to the live edge, keeping the current zoom.
   void jumpToLive() {
@@ -337,6 +541,7 @@ class ChartController extends ChangeNotifier {
       _timeAxisEngine.scaleMobile(timeScaleChange, timePercent);
       _lastHorizontalScale = details.horizontalScale;
       _refitPriceAxis();
+      _requestHistoryIfNeeded();
       if (timeAxis != beforeTime || priceAxis != beforePrice) {
         margins = _computeMargins();
         notifyListeners();
@@ -363,11 +568,13 @@ class ChartController extends ChangeNotifier {
 
   Coordinates _getEventPosition(Offset position, Size size) {
     final rect = layoutFor(size).priceRect;
-    final price = priceAxis.start + (rect.bottom - position.dy) * priceAxis.range / rect.height;
+    final price = priceForY(position.dy, priceAxis, rect, logScale: _viewConfig.logScale);
     final int time = timeAxis.start + ((position.dx - rect.left) * timeAxis.range ~/ rect.width);
     return Coordinates(timestamp: time, price: price);
   }
 
+  /// The price delta is what a linear axis would read; under a log scale a
+  /// host dragging its own objects should use the transform's mapping.
   Coordinates _getEventDelta(Offset delta, Size size) {
     final rect = layoutFor(size).priceRect;
     final priceDelta = -1 * delta.dy * priceAxis.range / rect.height;

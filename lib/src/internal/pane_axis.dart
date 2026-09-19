@@ -7,7 +7,11 @@ import 'indicator_render.dart';
 /// The value axis of a pane: its fixed range when the indicator has one,
 /// otherwise the visible values of its series with a little room, and a
 /// histogram always keeping its zero line in view.
-PriceAxis fitPaneAxis({required IndicatorRender render, required List<ChartCandle> candles, required TimeAxis timeAxis}) {
+PriceAxis fitPaneAxis({
+  required IndicatorRender render,
+  required List<ChartCandle> candles,
+  required TimeAxis timeAxis,
+}) {
   final fixed = render.fixedRange;
   if (fixed != null) return PriceAxis(start: fixed.$1, end: fixed.$2);
 

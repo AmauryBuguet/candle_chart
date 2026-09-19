@@ -16,6 +16,8 @@ class ChartColors extends Equatable {
     this.grid = Colors.white70,
     this.positionProfit = Colors.green,
     this.positionLoss = Colors.red,
+    this.line = Colors.white70,
+    this.drawing = Colors.blueAccent,
   });
 
   /// Background color of the chart.
@@ -48,6 +50,12 @@ class ChartColors extends Equatable {
   /// Color used for the losing-side position overlay.
   final Color positionLoss;
 
+  /// The price line when the chart type is `ChartType.line`.
+  final Color line;
+
+  /// The colour a drawing is created in.
+  final Color drawing;
+
   @override
   List<Object> get props => [
     background,
@@ -60,5 +68,7 @@ class ChartColors extends Equatable {
     grid,
     positionProfit,
     positionLoss,
+    line,
+    drawing,
   ];
 }

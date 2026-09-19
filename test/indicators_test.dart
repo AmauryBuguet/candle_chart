@@ -71,9 +71,33 @@ void main() {
     test('accumulates within the day and resets at midnight UTC', () {
       const dayMs = Duration.millisecondsPerDay;
       final candles = [
-        const ChartCandle(timestamp: dayMs - 120000, endTimestamp: dayMs - 60000, open: 10, high: 12, low: 8, close: 10, volume: 1),
-        const ChartCandle(timestamp: dayMs - 60000, endTimestamp: dayMs, open: 20, high: 22, low: 18, close: 20, volume: 3),
-        const ChartCandle(timestamp: dayMs, endTimestamp: dayMs + 60000, open: 30, high: 33, low: 27, close: 30, volume: 2),
+        const ChartCandle(
+          timestamp: dayMs - 120000,
+          endTimestamp: dayMs - 60000,
+          open: 10,
+          high: 12,
+          low: 8,
+          close: 10,
+          volume: 1,
+        ),
+        const ChartCandle(
+          timestamp: dayMs - 60000,
+          endTimestamp: dayMs,
+          open: 20,
+          high: 22,
+          low: 18,
+          close: 20,
+          volume: 3,
+        ),
+        const ChartCandle(
+          timestamp: dayMs,
+          endTimestamp: dayMs + 60000,
+          open: 30,
+          high: 33,
+          low: 27,
+          close: 30,
+          volume: 2,
+        ),
       ];
       final values = volumeWeightedAveragePrice(candles);
       expect(values[0], 10);
@@ -217,7 +241,15 @@ void main() {
       // Then a drop through the lower band.
       final falling = [
         ...rising,
-        const ChartCandle(timestamp: 6 * 60000, endTimestamp: 7 * 60000, open: 15, high: 15, low: 5, close: 5, volume: 1),
+        const ChartCandle(
+          timestamp: 6 * 60000,
+          endTimestamp: 7 * 60000,
+          open: 15,
+          high: 15,
+          low: 5,
+          close: 5,
+          volume: 1,
+        ),
       ];
       final flipped = superTrend(falling, 2, 1);
       expect(flipped.last!.up, isFalse);
