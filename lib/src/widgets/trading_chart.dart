@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:responsive_builder/responsive_builder.dart';
 
 import '../internal/chart_controller.dart';
 import '../models/axis.dart';
@@ -182,6 +182,8 @@ class TradingChart extends StatefulWidget {
   State<TradingChart> createState() => _TradingChartState();
 }
 
+const _desktopBreakpoint = 950.0;
+
 class _TradingChartState extends State<TradingChart> {
   late final ChartController _controller;
   final FocusNode _focus = FocusNode(debugLabel: 'TradingChart');
@@ -314,12 +316,24 @@ class _TradingChartState extends State<TradingChart> {
     _controller.setCrosshairPosition(event.localPosition);
   }
 
+  /// Below desktop width there is no hover, so the crosshair follows taps
+  /// and placement has no preview. A desktop OS is judged on the window's
+  /// width, a phone or tablet on its shortest side, whichever way it is held.
+  static bool _isMobile(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final width = switch (defaultTargetPlatform) {
+      TargetPlatform.macOS || TargetPlatform.windows || TargetPlatform.linux => size.width,
+      _ => size.shortestSide,
+    };
+    return width < _desktopBreakpoint;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
         _syncController(c.biggest);
-        final isMobile = getValueForScreenType<bool>(context: context, mobile: true, desktop: false);
+        final isMobile = _isMobile(context);
         return CallbackShortcuts(
           bindings: _shortcuts,
           child: Focus(

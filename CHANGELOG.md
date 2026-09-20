@@ -1,3 +1,7 @@
+## 0.4.4
+
+* Compiles to WebAssembly: the mobile/desktop split no longer goes through `responsive_builder`, whose `dart:io` probe throws under wasm. A desktop browser is now judged on the window's width rather than its shortest side.
+
 ## 0.4.3
 
 * A right click drops a half-placed drawing, keeping the tool and the selection.

@@ -1,6 +1,6 @@
 name: trading_chart
 description: "An independent, embeddable candlestick trading chart widget: pan/zoom, crosshair, draggable price lines, order overlays and position P&L shading."
-version: 0.4.3
+version: 0.4.4
 publish_to: 'none'
 
 environment:
@@ -13,7 +13,6 @@ dependencies:
   equatable: ^2.0.7
   intl: ^0.20.2
   collection: ^1.19.1
-  responsive_builder: ^0.7.1
 
 dev_dependencies:
   flutter_test:
