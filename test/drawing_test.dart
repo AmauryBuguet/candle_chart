@@ -137,22 +137,54 @@ void main() {
       expect(controller.placingFor(_size), isNull);
     });
 
-    test('with the magnet on, a point near a close lands exactly on it', () {
-      ChartDrawing? created;
-      final controller = _controller(tool: ChartDrawingTool.horizontalLine, magnet: true)
-        ..onDrawingCreated = (d) => created = d;
-      final projection = controller.projectionFor(_size);
-      final candle = _candles()[20];
-      final near = Offset(projection.xForTime(candle.timestamp + 30000), projection.yForPrice(105) + 3);
+    group('magnet', () {
+      Coordinates place(Offset at) {
+        ChartDrawing? created;
+        final controller = _controller(tool: ChartDrawingTool.horizontalLine, magnet: true)
+          ..onDrawingCreated = (d) => created = d;
+        controller.onPointerDown(
+          PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+          _size,
+          false,
+          onPointerDownInChart: (_, _, _, _) {},
+          onPointerDownOutsideChart: () {},
+        );
+        return created!.points.single;
+      }
 
-      controller.onPointerDown(
-        PointerDownEvent(position: near, kind: PointerDeviceKind.mouse),
-        _size,
-        false,
-        onPointerDownInChart: (_, _, _, _) {},
-        onPointerDownOutsideChart: () {},
-      );
-      expect(created!.points.single, Coordinates(timestamp: candle.timestamp, price: 105));
+      final projection = _controller().projectionFor(_size);
+      final candle = _candles()[20];
+
+      test('a point near a close lands exactly on it', () {
+        final near = Offset(projection.xForTime(candle.timestamp + 10000), projection.yForPrice(105) + 3);
+        expect(place(near), Coordinates(timestamp: candle.timestamp, price: 105));
+      });
+
+      test('the nearest candle takes it, as the crosshair aligns, from either side', () {
+        final y = projection.yForPrice(110) + 3;
+        expect(place(Offset(projection.xForTime(candle.timestamp - 20000), y)).timestamp, candle.timestamp);
+        expect(place(Offset(projection.xForTime(candle.timestamp + 20000), y)).timestamp, candle.timestamp);
+      });
+
+      test('with a tool in hand the crosshair sits where the point would land', () {
+        final near = Offset(projection.xForTime(candle.timestamp + 10000), projection.yForPrice(110) + 5);
+        final armed = _controller(tool: ChartDrawingTool.horizontalLine, magnet: true)..crosshairPosition = near;
+        final landing = projection.offsetOf(Coordinates(timestamp: candle.timestamp, price: 110));
+        expect(armed.crosshairFor(_size)!.dx, closeTo(landing.dx, 0.01));
+        expect(armed.crosshairFor(_size)!.dy, closeTo(landing.dy, 0.01));
+        final idle = _controller(magnet: true)..crosshairPosition = near;
+        expect(idle.crosshairFor(_size), near);
+        final off = _controller(tool: ChartDrawingTool.horizontalLine)..crosshairPosition = near;
+        expect(off.crosshairFor(_size), near);
+      });
+
+      test('it reaches a level well away in price, and no further', () {
+        final x = projection.xForTime(candle.timestamp);
+        final within = Offset(x, projection.yForPrice(110) - ChartController.magnetReach + 1);
+        expect(place(within), Coordinates(timestamp: candle.timestamp, price: 110));
+        final beyond = Offset(x, projection.yForPrice(110) - ChartController.magnetReach - 1);
+        expect(place(beyond).price, isNot(110));
+      });
     });
 
     test('tapping a drawing selects it, tapping nothing deselects, dragging moves it', () {

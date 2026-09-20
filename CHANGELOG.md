@@ -1,3 +1,8 @@
+## 0.4.5
+
+* The magnet snaps to the candle nearest in time, as the crosshair aligns, rather than the one whose slot the pointer is in, and reaches 20 pixels in price instead of 10. With a tool in hand the crosshair is drawn where the next point would land, so the pull shows before the click.
+* A right click does what Escape does — drops the half-placed drawing and the selection — and both report through `onDrawingCancelled`, so the host can put the tool down.
+
 ## 0.4.4
 
 * Compiles to WebAssembly: the mobile/desktop split no longer goes through `responsive_builder`, whose `dart:io` probe throws under wasm. A desktop browser is now judged on the window's width rather than its shortest side.

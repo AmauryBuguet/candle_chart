@@ -85,6 +85,7 @@ class ChartController extends ChangeNotifier {
   void Function(ChartDrawing drawing)? onDrawingChanged;
   void Function(Object? id)? onDrawingSelected;
   void Function(Object id)? onDrawingDeleted;
+  VoidCallback? onDrawingCancelled;
 
   /// The points placed so far with [activeTool].
   List<Coordinates> _placed = const [];
@@ -110,10 +111,12 @@ class ChartController extends ChangeNotifier {
   /// its own `onDragEnd`.
   void endDrawingDrag() => _dragging = null;
 
-  /// Drops the tool's half-placed points and the selection.
+  /// Drops the tool's half-placed points and the selection, and tells the
+  /// host, which may put the tool down.
   void cancelDrawing() {
     _placed = const [];
     if (selectedDrawing != null) onDrawingSelected?.call(null);
+    onDrawingCancelled?.call();
     notifyListeners();
   }
 
@@ -121,13 +124,6 @@ class ChartController extends ChangeNotifier {
   /// notifying — for when the host swaps the tool, mid-build.
   void dropPlacement() => _placed = const [];
 
-  /// Drops the tool's half-placed points, keeping the selection — a right
-  /// click's way out of a drawing that takes several.
-  void cancelPlacement() {
-    if (_placed.isEmpty) return;
-    _placed = const [];
-    notifyListeners();
-  }
 
   void deleteSelectedDrawing() {
     final selected = selectedDrawing;
@@ -205,18 +201,32 @@ class ChartController extends ChangeNotifier {
     return true;
   }
 
-  /// With the magnet on, a point within a few pixels of the candle's open,
-  /// high, low or close lands exactly on it, at the candle's own time.
+  /// Where the crosshair is drawn: on the pointer, or with a tool in hand
+  /// on the point the next placement would take, so the magnet's pull shows.
+  Offset? crosshairFor(Size size) {
+    final pointer = crosshairPosition;
+    if (pointer == null || activeTool == null) return pointer;
+    final raw = _getEventPosition(pointer, size);
+    final snapped = _snapped(raw, size);
+    return snapped == raw ? pointer : projectionFor(size).offsetOf(snapped);
+  }
+
+  /// How far in pixels the magnet reaches, in price only.
+  static const magnetReach = 20.0;
+
+  /// With the magnet on, a point over a candle — the nearest one, as the
+  /// crosshair aligns — lands on its open, high, low or close when one is
+  /// within [magnetReach], at the candle's own time.
   Coordinates _snapped(Coordinates c, Size size) {
     if (!magnet || _candles.isEmpty) return c;
-    final interval = _interval.inMilliseconds;
-    final index = _candles.indexWhere((k) => k.timestamp + interval > c.timestamp);
-    if (index == -1 || _candles[index].timestamp > c.timestamp) return c;
+    final halfInterval = _interval.inMilliseconds ~/ 2;
+    final index = _firstCandleFrom(c.timestamp - halfInterval);
+    if (index == _candles.length || _candles[index].timestamp - halfInterval > c.timestamp) return c;
     final candle = _candles[index];
     final projection = projectionFor(size);
     final y = projection.yForPrice(c.price);
     double? best;
-    var bestDistance = 10.0;
+    var bestDistance = magnetReach;
     for (final level in [candle.open, candle.high, candle.low, candle.close]) {
       final distance = (projection.yForPrice(level) - y).abs();
       if (distance < bestDistance) {
@@ -226,6 +236,20 @@ class ChartController extends ChangeNotifier {
     }
     if (best == null) return c;
     return Coordinates(timestamp: candle.timestamp, price: best);
+  }
+
+  /// The index of the first candle at or after [timestamp], by bisection.
+  int _firstCandleFrom(int timestamp) {
+    var low = 0, high = _candles.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      if (_candles[mid].timestamp < timestamp) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
   }
 
   Size _textSize(ChartText text) => (TextPainter(

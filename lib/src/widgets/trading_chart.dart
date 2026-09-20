@@ -63,11 +63,11 @@ class TradingChartController extends ChangeNotifier {
 /// own; the host still owns the list and every change comes back to it.
 ///
 /// On desktop the chart takes focus on a click and answers the keyboard:
-/// Escape drops a half-placed drawing and the selection, Delete or
-/// Backspace deletes the selected drawing, the arrow keys pan, plus and
-/// minus zoom, Home jumps to live. A right click drops a half-placed
-/// drawing and does nothing else — a web host wanting it must keep the
-/// browser's context menu off the chart.
+/// Escape or a right click drops a half-placed drawing and the selection
+/// and reports through [onDrawingCancelled], Delete or Backspace deletes the
+/// selected drawing, the arrow keys pan, plus and minus zoom, Home jumps to
+/// live. A web host wanting the right click must keep the browser's context
+/// menu off the chart.
 class TradingChart extends StatefulWidget {
   const TradingChart({
     super.key,
@@ -94,6 +94,7 @@ class TradingChart extends StatefulWidget {
     this.onDrawingChanged,
     this.onDrawingSelected,
     this.onDrawingDeleted,
+    this.onDrawingCancelled,
     this.onNeedMoreHistory,
   });
 
@@ -157,8 +158,9 @@ class TradingChart extends StatefulWidget {
   /// down. Nothing is selected or panned meanwhile.
   final ChartDrawingTool? activeTool;
 
-  /// Whether a placed or dragged anchor snaps to the nearest candle's open,
-  /// high, low or close when within a few pixels of it.
+  /// Whether a placed or dragged anchor snaps to the open, high, low or
+  /// close of the candle under it — the nearest in time, as the crosshair
+  /// aligns — when one is within reach in price.
   final bool magnet;
 
   final void Function(ChartDrawing drawing)? onDrawingCreated;
@@ -173,6 +175,10 @@ class TradingChart extends StatefulWidget {
 
   /// Delete or Backspace with a drawing selected.
   final void Function(Object id)? onDrawingDeleted;
+
+  /// Escape or a right click: the half-placed drawing and the selection are
+  /// gone, and the host may put [activeTool] down.
+  final VoidCallback? onDrawingCancelled;
 
   /// The view is nearing the oldest candle: the host may fetch what comes
   /// before it and pass a longer list. Called once per oldest candle.
@@ -198,6 +204,7 @@ class _TradingChartState extends State<TradingChart> {
       ..onDrawingChanged = widget.onDrawingChanged
       ..onDrawingSelected = widget.onDrawingSelected
       ..onDrawingDeleted = widget.onDrawingDeleted
+      ..onDrawingCancelled = widget.onDrawingCancelled
       ..onNeedMoreHistory = widget.onNeedMoreHistory;
   }
 
@@ -347,7 +354,7 @@ class _TradingChartState extends State<TradingChart> {
                   onPointerDown: (event) {
                     _focus.requestFocus();
                     if (event.buttons == kSecondaryMouseButton) {
-                      _controller.cancelPlacement();
+                      _controller.cancelDrawing();
                       return;
                     }
                     _controller.onPointerDown(
@@ -381,7 +388,7 @@ class _TradingChartState extends State<TradingChart> {
                         layout: _controller.layoutFor(c.biggest),
                         priceAxis: _controller.priceAxis,
                         timeAxis: _controller.timeAxis,
-                        crosshairPosition: isMobile ? null : _controller.crosshairPosition,
+                        crosshairPosition: isMobile ? null : _controller.crosshairFor(c.biggest),
                         positions: widget.candles.isNotEmpty ? widget.positions : const [],
                         style: widget.style,
                         formatPrice: widget.formatPrice,

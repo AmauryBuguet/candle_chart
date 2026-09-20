@@ -44,6 +44,7 @@ Future<void> _pump(
   ChartStyle style = const ChartStyle(),
   void Function(Object? id)? onSelected,
   void Function(Object id)? onDeleted,
+  VoidCallback? onCancelled,
 }) async {
   tester.view.physicalSize = const Size(1400, 1000);
   tester.view.devicePixelRatio = 1;
@@ -68,6 +69,7 @@ Future<void> _pump(
           onDragEnd: () async {},
           onDrawingSelected: onSelected,
           onDrawingDeleted: onDeleted,
+          onDrawingCancelled: onCancelled,
         ),
       ),
     ),
@@ -89,7 +91,14 @@ void main() {
   testWidgets('after a click the chart answers Escape and Delete for the selected drawing', (tester) async {
     final selected = <Object?>[];
     final deleted = <Object>[];
-    await _pump(tester, drawings: _everyKind(), onSelected: selected.add, onDeleted: deleted.add);
+    var cancelled = 0;
+    await _pump(
+      tester,
+      drawings: _everyKind(),
+      onSelected: selected.add,
+      onDeleted: deleted.add,
+      onCancelled: () => cancelled++,
+    );
 
     // A click on empty chart takes focus; it also lands on no drawing, so
     // the selection is dropped once.
@@ -104,11 +113,12 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(selected, [null, null]);
+    expect(cancelled, 1);
     // The tap armed the double-tap timer; let it lapse.
     await tester.pumpAndSettle();
   });
 
-  testWidgets('a right click drops the half-placed drawing and keeps the tool', (tester) async {
+  testWidgets('a right click drops the half-placed drawing and lets the host put the tool down', (tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -121,12 +131,12 @@ void main() {
     await gesture.down(const Offset(600, 400));
     await gesture.up();
     await tester.pump();
-    // The next click starts over rather than closing the first line.
+    // The next click lands on nothing rather than closing the first line.
     await tester.tapAt(const Offset(700, 500));
     await tester.pump();
     final chart = tester.widget<TradingChart>(find.byType(TradingChart));
     expect(chart.drawings, isEmpty);
-    expect(chart.activeTool, ChartDrawingTool.trendLine);
+    expect(chart.activeTool, isNull);
     await tester.pumpAndSettle();
   });
 
@@ -187,5 +197,6 @@ class _PlacingHostState extends State<_PlacingHost> {
       _tool = null;
     }),
     onDrawingSelected: widget.onSelected,
+    onDrawingCancelled: () => setState(() => _tool = null),
   );
 }
