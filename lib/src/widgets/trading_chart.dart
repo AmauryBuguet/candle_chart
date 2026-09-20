@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:responsive_builder/responsive_builder.dart';
@@ -64,7 +65,9 @@ class TradingChartController extends ChangeNotifier {
 /// On desktop the chart takes focus on a click and answers the keyboard:
 /// Escape drops a half-placed drawing and the selection, Delete or
 /// Backspace deletes the selected drawing, the arrow keys pan, plus and
-/// minus zoom, Home jumps to live.
+/// minus zoom, Home jumps to live. A right click drops a half-placed
+/// drawing and does nothing else — a web host wanting it must keep the
+/// browser's context menu off the chart.
 class TradingChart extends StatefulWidget {
   const TradingChart({
     super.key,
@@ -329,6 +332,10 @@ class _TradingChartState extends State<TradingChart> {
                 child: Listener(
                   onPointerDown: (event) {
                     _focus.requestFocus();
+                    if (event.buttons == kSecondaryMouseButton) {
+                      _controller.cancelPlacement();
+                      return;
+                    }
                     _controller.onPointerDown(
                       event,
                       c.biggest,

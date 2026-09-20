@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,6 +105,28 @@ void main() {
     await tester.pump();
     expect(selected, [null, null]);
     // The tap armed the double-tap timer; let it lapse.
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a right click drops the half-placed drawing and keeps the tool', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: _PlacingHost(onSelected: (_) {}))));
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(const Offset(300, 300));
+    await tester.pump();
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+    await gesture.down(const Offset(600, 400));
+    await gesture.up();
+    await tester.pump();
+    // The next click starts over rather than closing the first line.
+    await tester.tapAt(const Offset(700, 500));
+    await tester.pump();
+    final chart = tester.widget<TradingChart>(find.byType(TradingChart));
+    expect(chart.drawings, isEmpty);
+    expect(chart.activeTool, ChartDrawingTool.trendLine);
     await tester.pumpAndSettle();
   });
 

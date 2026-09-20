@@ -1,3 +1,7 @@
+## 0.4.3
+
+* A right click drops a half-placed drawing, keeping the tool and the selection.
+
 ## 0.4.2
 
 * Swapping `activeTool` while a drawing is being placed no longer deselects through `onDrawingSelected` during the host's build; only the half-placed points are dropped.
