@@ -42,8 +42,9 @@ class ChartColors extends Equatable {
   /// Text color of the crosshair's time/price labels.
   final Color crosshairLabelText;
 
-  /// Color of the cursor a tool is aimed with on a phone, drawn thicker
-  /// than the crosshair so the two tell apart.
+  /// Color of the crosshair with a tool in hand — the cursor it is aimed
+  /// with on a phone — drawn thicker than the idle crosshair so the two tell
+  /// apart.
   final Color cursor;
 
   /// Color of the grid lines.

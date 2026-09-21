@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trading_chart/src/painter/chart_painter.dart';
 import 'package:trading_chart/trading_chart.dart';
 
-final _start = DateTime.now().millisecondsSinceEpoch - 40 * 60000;
+final _start = (DateTime.now().millisecondsSinceEpoch ~/ 60000 - 40) * 60000;
 
 List<ChartCandle> _candles() => [
   for (var i = 0; i < 40; i++)
@@ -119,6 +119,56 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('picking a tool up gives the chart focus, so Escape drops it before any click', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tool = ValueNotifier<ChartDrawingTool?>(null);
+    addTearDown(tool.dispose);
+    var cancelled = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ValueListenableBuilder(
+            valueListenable: tool,
+            builder: (_, active, _) => TradingChart(
+              candles: _candles(),
+              lines: const [],
+              orderLines: const [],
+              positions: const [],
+              style: const ChartStyle(),
+              activeTool: active,
+              interval: const Duration(minutes: 1),
+              viewConfig: const ChartViewConfig(),
+              viewResetKey: 'BTC',
+              formatPrice: (price) => price.toStringAsFixed(1),
+              onPointerDownInChart: (_, _, _, _) {},
+              onPointerDownOutsideChart: () {},
+              onDragUpdate: (_, _, _) => false,
+              onDragEnd: () async {},
+              onDrawingCancelled: () {
+                cancelled++;
+                tool.value = null;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(cancelled, 0);
+
+    tool.value = ChartDrawingTool.trendLine;
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(cancelled, 1);
+    expect(tool.value, isNull);
+  });
+
   testWidgets('a right click drops the half-placed drawing and lets the host put the tool down', (tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
@@ -162,8 +212,10 @@ void main() {
                 .widget<CustomPaint>(find.descendant(of: find.byType(TradingChart), matching: find.byType(CustomPaint)))
                 .painter!
             as ChartPainter;
-    expect(painter().crosshairIsCursor, isTrue);
-    expect(painter().crosshairPosition, painter().layout.priceRect.center);
+    expect(painter().crosshairArmed, isTrue);
+    // The aim starts in the middle; the crosshair sits on the candle grid there.
+    expect(painter().crosshairPosition!.dy, closeTo(painter().layout.priceRect.center.dy, 0.01));
+    expect(painter().crosshairPosition!.dx, closeTo(painter().layout.priceRect.center.dx, 5));
 
     await tester.tapAt(chart.topLeft + const Offset(20, 20));
     await tester.pump();
@@ -175,10 +227,13 @@ void main() {
 
     final drawing = tester.widget<TradingChart>(find.byType(TradingChart)).drawings.single;
     final rect = painter().layout.priceRect;
-    final points = [for (final p in drawing.points) painter().projectionFor(rect).offsetOf(p)];
-    expect(painter().crosshairIsCursor, isFalse);
-    expect(points[0].dx, closeTo(rect.center.dx, 1));
-    expect(points[1].dx, closeTo(rect.center.dx - 100, 1));
+    final projection = painter().projectionFor(rect);
+    final points = [for (final p in drawing.points) projection.offsetOf(p)];
+    // Points land on the candle grid, so up to half a candle from the aim.
+    final halfBar = (projection.xForTime(_start + 60000) - projection.xForTime(_start)) / 2;
+    expect(painter().crosshairArmed, isFalse);
+    expect(points[0].dx, closeTo(rect.center.dx, halfBar));
+    expect(points[1].dx, closeTo(rect.center.dx - 100, halfBar));
     await tester.pumpAndSettle();
   });
 

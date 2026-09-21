@@ -1,3 +1,14 @@
+## 0.4.7
+
+* A parallel channel's third point sets only its width: the second line is the first carried straight across, so the two are the sides of a rectangle, and the third handle sits in the middle of the second line.
+* A rectangle has a handle on each of its four corners; dragging a derived corner moves the two points it is made of (`movedAnchor`).
+* Fibonacci retracement levels run from 1 on the first point's price to 0 on the second's (`fibPrice`).
+* With a tool in hand the crosshair is drawn in `ChartColors.cursor`, thicker, on every platform — no longer only the phone's cursor (`ChartPainter.crosshairArmed`).
+* Picking a tool up gives the chart keyboard focus, so Escape drops it before the first point is placed, as a right click already did.
+* The magnet reaches 30 pixels in price instead of 20.
+* A placed or dragged point lands on the candle grid in time, as the crosshair aligns, with or without the magnet; a dragged drawing moves by whole intervals.
+* A mouse held down after placing a point keeps aiming the next one: the crosshair and the placement preview follow it as they do a hover, and nothing pans. The next point is still placed by the next click.
+
 ## 0.4.6
 
 * A drawing is selected before it moves: a click or tap on it selects it, and only the selected one is dragged, so a swipe starting on an unselected drawing pans. A drawing is hit on its strokes only, no longer inside a filled area, within 8 pixels for a mouse and 16 for a finger (`DrawingHitTolerance`).

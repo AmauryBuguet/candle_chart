@@ -5,7 +5,8 @@ import 'package:trading_chart/src/internal/chart_controller.dart';
 import 'package:trading_chart/src/internal/drawing_geometry.dart';
 import 'package:trading_chart/trading_chart.dart';
 
-final _start = DateTime.now().millisecondsSinceEpoch - 40 * 60000;
+/// Candles sit on the minute grid, as an exchange's do.
+final _start = (DateTime.now().millisecondsSinceEpoch ~/ 60000 - 40) * 60000;
 
 List<ChartCandle> _candles() => [
   for (var i = 0; i < 40; i++)
@@ -36,6 +37,13 @@ ChartController _controller({List<ChartDrawing> drawings = const [], ChartDrawin
       ..magnet = magnet;
 
 const _size = Size(600, 400);
+
+/// Half a candle's width on screen: the crosshair aligns on the candle grid,
+/// so it may sit that far from the pointer.
+double _halfBar(ChartController controller) {
+  final projection = controller.projectionFor(_size);
+  return (projection.xForTime(_start + 60000) - projection.xForTime(_start)) / 2;
+}
 
 DrawingProjection _projection() => DrawingProjection(
   rect: const Rect.fromLTRB(0, 0, 100, 100),
@@ -84,6 +92,57 @@ void main() {
       expect(hitTestDrawing(box.copyWith(hidden: true), const Offset(30, 12), projection, handles: false), isNull);
     });
 
+    test('a rectangle has a handle on each corner; the derived ones move both points', () {
+      const box = ChartRectangle(id: 'b', points: points, color: Colors.blue);
+      expect(drawingAnchors(box, projection), [
+        const Offset(10, 10),
+        const Offset(50, 50),
+        const Offset(10, 50),
+        const Offset(50, 10),
+      ]);
+      expect(hitTestDrawing(box, const Offset(11, 49), projection, handles: true)?.anchor, 2);
+      expect(hitTestDrawing(box, const Offset(49, 11), projection, handles: true)?.anchor, 3);
+      expect(movedAnchor(box, 2, const Coordinates(timestamp: 20, price: 40)), [
+        const Coordinates(timestamp: 20, price: 90),
+        const Coordinates(timestamp: 50, price: 40),
+      ]);
+      expect(movedAnchor(box, 3, const Coordinates(timestamp: 60, price: 80)), [
+        const Coordinates(timestamp: 10, price: 80),
+        const Coordinates(timestamp: 60, price: 50),
+      ]);
+      expect(movedAnchor(box, 0, const Coordinates(timestamp: 5, price: 95)), [
+        const Coordinates(timestamp: 5, price: 95),
+        points[1],
+      ]);
+    });
+
+    test('a channel is a rectangle: the third point sets only its width, and its handle sits mid-way', () {
+      // The first line runs from (10, 10) to (50, 50); the third point is at
+      // (20, 40), 10√2 straight across from it and 10√2 along it.
+      const channel = ChartParallelChannel(
+        id: 'c',
+        points: [...points, Coordinates(timestamp: 20, price: 60)],
+        color: Colors.blue,
+      );
+      final segments = drawingSegments(channel, projection);
+      expect(segments[0], (const Offset(10, 10), const Offset(50, 50)));
+      expect(segments[1].$1.dx, closeTo(0, 1e-9));
+      expect(segments[1].$1.dy, closeTo(20, 1e-9));
+      expect(segments[1].$2.dx, closeTo(40, 1e-9));
+      expect(segments[1].$2.dy, closeTo(60, 1e-9));
+      final handle = drawingAnchors(channel, projection)[2];
+      expect(handle.dx, closeTo(20, 1e-9));
+      expect(handle.dy, closeTo(40, 1e-9));
+
+      // Slid along the line, the third point changes nothing but the width.
+      final slid = channel.copyWith(points: [...points, const Coordinates(timestamp: 30, price: 60)]);
+      final second = drawingSegments(slid, projection)[1];
+      expect(second.$1.dx, closeTo(5, 1e-9));
+      expect(second.$1.dy, closeTo(15, 1e-9));
+      expect(second.$2.dx, closeTo(45, 1e-9));
+      expect(second.$2.dy, closeTo(55, 1e-9));
+    });
+
     test('a horizontal line spans the pane at its price', () {
       const h = ChartHorizontalLine(
         id: 'h',
@@ -93,7 +152,7 @@ void main() {
       expect(drawingSegments(h, projection).single, (const Offset(0, 60), const Offset(100, 60)));
     });
 
-    test('fibonacci levels sit between the two prices', () {
+    test('fibonacci levels run from 1 on the first point to 0 on the second', () {
       const fib = ChartFibRetracement(
         id: 'f',
         points: points,
@@ -101,9 +160,12 @@ void main() {
       );
       final segments = drawingSegments(fib, projection);
       expect(segments, hasLength(fibLevels.length));
-      expect(segments.first.$1.dy, 10);
-      expect(segments.last.$1.dy, 50);
+      expect(fibLevels.first, 0);
+      expect(segments.first.$1.dy, 50);
+      expect(segments.last.$1.dy, 10);
       expect(segments[3].$1.dy, 30);
+      expect(fibPrice(points, 1), 90);
+      expect(fibPrice(points, 0), 50);
     });
   });
 
@@ -155,6 +217,45 @@ void main() {
       expect(controller.placingFor(_size), isNull);
     });
 
+    test('a mouse held down after placing a point keeps aiming the next one', () {
+      ChartDrawing? created;
+      final controller = _controller(tool: ChartDrawingTool.rectangle)..onDrawingCreated = (d) => created = d;
+      final rect = controller.layoutFor(_size).priceRect;
+      final first = rect.center - const Offset(100, 50);
+      final before = controller.timeAxis;
+
+      controller.onPointerDown(
+        PointerDownEvent(position: first, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the tool takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+      controller.onPointerMove(
+        PointerMoveEvent(position: first + const Offset(80, 40), delta: const Offset(80, 40)),
+        _size,
+        onDragUpdate: (_, _, _) => fail('the tool holds the drag'),
+      );
+      expect(controller.crosshairPosition, first + const Offset(80, 40));
+      expect(controller.timeAxis, before);
+      final preview = controller.placingFor(_size)!;
+      final projection = controller.projectionFor(_size);
+      expect(projection.offsetOf(preview.points[1]).dx, closeTo(first.dx + 80, _halfBar(controller)));
+      expect(projection.offsetOf(preview.points[1]).dy, closeTo(first.dy + 40, 1));
+      expect(created, isNull);
+
+      controller.onPointerUp(PointerUpEvent(position: first + const Offset(80, 40)), _size);
+      expect(created, isNull);
+      controller.onPointerDown(
+        PointerDownEvent(position: first + const Offset(100, 60), kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the tool takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+      expect(created, isA<ChartRectangle>());
+    });
+
     group('magnet', () {
       Coordinates place(Offset at) {
         ChartDrawing? created;
@@ -194,8 +295,10 @@ void main() {
         expect(armed.crosshairFor(_size)!.dy, closeTo(landing.dy, 0.01));
         final idle = _controller(magnet: true)..crosshairPosition = near;
         expect(idle.crosshairFor(_size), near);
+        // Without the magnet it still aligns on the candle in time.
         final off = _controller(tool: ChartDrawingTool.horizontalLine)..crosshairPosition = near;
-        expect(off.crosshairFor(_size), near);
+        expect(off.crosshairFor(_size)!.dx, closeTo(off.projectionFor(_size).xForTime(candle.timestamp), 0.01));
+        expect(off.crosshairFor(_size)!.dy, closeTo(near.dy, 0.01));
       });
 
       test('it reaches a level well away in price, and no further', () {
@@ -205,6 +308,50 @@ void main() {
         final beyond = Offset(x, projection.yForPrice(110) - ChartController.magnetReach - 1);
         expect(place(beyond).price, isNot(110));
       });
+    });
+
+    test('a placed point lands on the candle grid in time, magnet or not', () {
+      ChartDrawing? created;
+      final controller = _controller(tool: ChartDrawingTool.verticalLine)..onDrawingCreated = (d) => created = d;
+      final candle = _candles()[20];
+      final x = controller.projectionFor(_size).xForTime(candle.timestamp + 20000);
+      controller.onPointerDown(
+        PointerDownEvent(position: Offset(x, 100), kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) {},
+        onPointerDownOutsideChart: () {},
+      );
+      expect(created!.points.single.timestamp, candle.timestamp);
+    });
+
+    test('a dragged drawing moves by whole intervals', () {
+      ChartDrawing? changed;
+      final line = ChartVerticalLine(
+        id: 'v',
+        points: [Coordinates(timestamp: _start + 10 * 60000, price: 100)],
+        color: Colors.blue,
+        selected: true,
+      );
+      final controller = _controller(drawings: [line])..onDrawingChanged = (d) => changed = d;
+      final projection = controller.projectionFor(_size);
+      final at = Offset(projection.xForTime(line.points[0].timestamp), 200);
+      final barWidth = projection.xForTime(_start + 60000) - projection.xForTime(_start);
+      controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the drawing takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+      final by = Offset(barWidth * 2.3, 0);
+      controller.onPointerMove(
+        PointerMoveEvent(position: at + by, delta: by),
+        _size,
+        onDragUpdate: (_, _, _) => fail('the drawing takes the drag'),
+      );
+      expect(changed!.points.single.timestamp, _start + 12 * 60000);
+      controller.onPointerUp(PointerUpEvent(position: at + by), _size);
     });
 
     test('a click selects a drawing and moves nothing; the next drag moves it; a click on nothing deselects', () {
@@ -467,22 +614,24 @@ void main() {
         final controller = aiming(ChartDrawingTool.trendLine, pinned: true)..onDrawingCreated = (d) => created = d;
         final rect = controller.layoutFor(_size).priceRect;
         expect(controller.crosshairPosition, isNull);
-        expect(controller.crosshairFor(_size), rect.center);
+        expect(controller.crosshairFor(_size)!.dx, closeTo(rect.center.dx, _halfBar(controller)));
+        expect(controller.crosshairFor(_size)!.dy, closeTo(rect.center.dy, 0.01));
 
         final before = controller.timeAxis;
         down(controller, rect.bottomLeft + const Offset(10, -10));
         move(controller, rect.bottomLeft + const Offset(10, -10), const Offset(-40, 30));
         up(controller, rect.bottomLeft + const Offset(-30, 20));
-        expect(controller.crosshairFor(_size), rect.center + const Offset(-40, 30));
+        expect(controller.crosshairFor(_size)!.dx, closeTo(rect.center.dx - 40, _halfBar(controller)));
+        expect(controller.crosshairFor(_size)!.dy, closeTo(rect.center.dy + 30, 0.01));
         expect(controller.timeAxis, before);
 
         down(controller, const Offset(50, 50));
         up(controller, const Offset(50, 50));
         expect(created, isNull);
         final first = controller.placingFor(_size)!.points.first;
-        expect(controller.projectionFor(_size).offsetOf(first).dx, closeTo(rect.center.dx - 40, 0.01));
+        expect(controller.projectionFor(_size).offsetOf(first).dx, closeTo(rect.center.dx - 40, _halfBar(controller)));
         expect(controller.projectionFor(_size).offsetOf(first).dy, closeTo(rect.center.dy + 30, 0.01));
-        expect(controller.crosshairFor(_size), rect.center + const Offset(-40, 30));
+        expect(controller.crosshairFor(_size)!.dy, closeTo(rect.center.dy + 30, 0.01));
 
         down(controller, const Offset(50, 50));
         move(controller, const Offset(50, 50), const Offset(80, 0));
@@ -500,11 +649,13 @@ void main() {
         down(controller, rect.center);
         move(controller, rect.center, const Offset(-2000, 2000));
         up(controller, rect.center + const Offset(-2000, 2000));
-        expect(controller.crosshairFor(_size), rect.bottomLeft);
+        expect(controller.crosshairFor(_size)!.dx, closeTo(rect.left, _halfBar(controller)));
+        expect(controller.crosshairFor(_size)!.dy, closeTo(rect.bottom, 0.01));
         controller
           ..activeTool = ChartDrawingTool.ray
           ..toolChanged();
-        expect(controller.crosshairFor(_size), rect.center);
+        expect(controller.crosshairFor(_size)!.dx, closeTo(rect.center.dx, _halfBar(controller)));
+        expect(controller.crosshairFor(_size)!.dy, closeTo(rect.center.dy, 0.01));
       });
     });
 

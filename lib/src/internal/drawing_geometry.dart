@@ -4,8 +4,13 @@ import 'dart:ui';
 import '../models/chart_drawing.dart';
 import '../models/coordinates.dart';
 
-/// The Fibonacci retracement ratios, bottom to top.
+/// The Fibonacci retracement ratios: 1 sits on the first point's price, 0
+/// on the second's.
 const List<double> fibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
+/// The price of a Fibonacci [level] between the two anchors' prices.
+double fibPrice(List<Coordinates> points, double level) =>
+    points[0].price + (points[1].price - points[0].price) * (1 - level);
 
 /// The price pane's mapping, the only thing drawing geometry needs.
 class DrawingProjection {
@@ -48,14 +53,53 @@ class DrawingHitTolerance {
   final double handle;
 }
 
-/// The screen positions of a drawing's anchors.
-List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p) => [
-  for (final c in drawing.points) p.offsetOf(c),
-];
+/// The screen positions of a drawing's handles: its points, plus a
+/// rectangle's two other corners; a channel's third handle sits in the
+/// middle of its second line.
+List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p) {
+  final a = _pointsOf(drawing, p);
+  return switch (drawing) {
+    ChartRectangle() => [...a, Offset(a[0].dx, a[1].dy), Offset(a[1].dx, a[0].dy)],
+    ChartParallelChannel() => [a[0], a[1], (a[0] + a[1]) / 2 + _channelOffset(a)],
+    _ => a,
+  };
+}
+
+List<Offset> _pointsOf(ChartDrawing drawing, DrawingProjection p) => [for (final c in drawing.points) p.offsetOf(c)];
+
+/// The points of [drawing] once its handle [anchor] is dragged to [to]: a
+/// rectangle's derived corners move the two points they are made of.
+List<Coordinates> movedAnchor(ChartDrawing drawing, int anchor, Coordinates to) {
+  final points = [...drawing.points];
+  if (drawing is ChartRectangle && anchor >= 2) {
+    final (timeOf, priceOf) = anchor == 2 ? (0, 1) : (1, 0);
+    points[timeOf] = Coordinates(timestamp: to.timestamp, price: points[timeOf].price);
+    points[priceOf] = Coordinates(timestamp: points[priceOf].timestamp, price: to.price);
+  } else {
+    points[anchor] = to;
+  }
+  return points;
+}
+
+/// A channel's second line: the first carried straight across to the
+/// third point, which sets only the width, so the two lines are always
+/// the sides of a rectangle.
+(Offset, Offset) _channelSecondLine(List<Offset> a) {
+  final across = _channelOffset(a);
+  return (a[0] + across, a[1] + across);
+}
+
+Offset _channelOffset(List<Offset> a) {
+  final along = a[1] - a[0];
+  if (along.distance == 0) return a[2] - a[0];
+  final normal = Offset(-along.dy, along.dx) / along.distance;
+  final toThird = a[2] - (a[0] + a[1]) / 2;
+  return normal * (toThird.dx * normal.dx + toThird.dy * normal.dy);
+}
 
 /// The straight strokes of a drawing, extended lines run out past the pane.
 List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p) {
-  final a = drawingAnchors(drawing, p);
+  final a = _pointsOf(drawing, p);
   final rect = p.rect;
   final reach = (rect.width + rect.height) * 4;
   return switch (drawing) {
@@ -66,10 +110,9 @@ List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p
     ChartHorizontalRay() => [(a[0], Offset(rect.right, a[0].dy))],
     ChartVerticalLine() => [(Offset(a[0].dx, rect.top), Offset(a[0].dx, rect.bottom))],
     ChartRectangle() || ChartMeasure() => _rectEdges(Rect.fromPoints(a[0], a[1])),
-    ChartParallelChannel() => [(a[0], a[1]), (a[2], a[2] + (a[1] - a[0]))],
+    ChartParallelChannel() => [(a[0], a[1]), _channelSecondLine(a)],
     ChartFibRetracement() => [
-      for (final level in fibLevels)
-        (Offset(min(a[0].dx, a[1].dx), _fibY(a, level)), Offset(max(a[0].dx, a[1].dx), _fibY(a, level))),
+      for (final y in _fibYs(drawing, p)) (Offset(min(a[0].dx, a[1].dx), y), Offset(max(a[0].dx, a[1].dx), y)),
     ],
     ChartText() => const [],
   };
@@ -77,22 +120,24 @@ List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p
 
 /// The filled area of a drawing, if it has one.
 Path? drawingArea(ChartDrawing drawing, DrawingProjection p) {
-  final a = drawingAnchors(drawing, p);
+  final a = _pointsOf(drawing, p);
   return switch (drawing) {
     ChartRectangle() || ChartMeasure() => Path()..addRect(Rect.fromPoints(a[0], a[1])),
-    ChartParallelChannel() =>
-      Path()
-        ..moveTo(a[0].dx, a[0].dy)
-        ..lineTo(a[1].dx, a[1].dy)
-        ..lineTo(a[2].dx + (a[1].dx - a[0].dx), a[2].dy + (a[1].dy - a[0].dy))
-        ..lineTo(a[2].dx, a[2].dy)
-        ..close(),
+    ChartParallelChannel() => switch (_channelSecondLine(a)) {
+      (final c, final d) =>
+        Path()
+          ..moveTo(a[0].dx, a[0].dy)
+          ..lineTo(a[1].dx, a[1].dy)
+          ..lineTo(d.dx, d.dy)
+          ..lineTo(c.dx, c.dy)
+          ..close(),
+    },
     _ => null,
   };
 }
 
-/// The y of a Fibonacci level between the two anchors' prices.
-double _fibY(List<Offset> a, double level) => a[0].dy + (a[1].dy - a[0].dy) * level;
+Iterable<double> _fibYs(ChartFibRetracement drawing, DrawingProjection p) =>
+    fibLevels.map((level) => p.yForPrice(fibPrice(drawing.points, level)));
 
 /// Whether [position] is on the drawing: on an anchor when [handles] are
 /// live, else on a stroke — a filled area is not a handle on it.

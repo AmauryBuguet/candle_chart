@@ -258,7 +258,11 @@ class _TradingChartState extends State<TradingChart> {
       colors: widget.style.colors,
     );
     _syncDrawingInputs();
-    if (widget.activeTool != oldWidget.activeTool) _controller.toolChanged();
+    if (widget.activeTool != oldWidget.activeTool) {
+      _controller.toolChanged();
+      // Escape must drop the tool before the first click gives the chart focus.
+      if (widget.activeTool != null) _focus.requestFocus();
+    }
     _reportPriceAxisIfChanged();
   }
 
@@ -408,7 +412,7 @@ class _TradingChartState extends State<TradingChart> {
                         priceAxis: _controller.priceAxis,
                         timeAxis: _controller.timeAxis,
                         crosshairPosition: _controller.crosshairFor(c.biggest),
-                        crosshairIsCursor: _controller.aiming,
+                        crosshairArmed: _controller.activeTool != null,
                         positions: widget.candles.isNotEmpty ? widget.positions : const [],
                         style: widget.style,
                         formatPrice: widget.formatPrice,

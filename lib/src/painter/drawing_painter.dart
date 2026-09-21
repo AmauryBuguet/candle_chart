@@ -64,10 +64,8 @@ class DrawingPainter {
   void _drawFibLabels(ChartFibRetracement drawing) {
     final anchors = drawingAnchors(drawing, projection);
     final left = min(anchors[0].dx, anchors[1].dx);
-    final low = drawing.points[0].price;
-    final high = drawing.points[1].price;
     for (final level in fibLevels) {
-      final price = low + (high - low) * level;
+      final price = fibPrice(drawing.points, level);
       final y = projection.yForPrice(price);
       final tp = _textPainter('${level.toStringAsFixed(3)}  ${formatPrice(price)}', drawing.color);
       tp.paint(canvas, Offset(left + 4, y - tp.height - 1));

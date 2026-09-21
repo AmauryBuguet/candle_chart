@@ -99,6 +99,10 @@ class ChartController extends ChangeNotifier {
   Offset? _cursor;
   bool _movingCursor = false;
 
+  /// A mouse held down after placing a point: it keeps aiming the next
+  /// one, the crosshair and the preview following it as they do a hover.
+  bool _holdingAfterPlace = false;
+
   /// Whether the crosshair drawn is the cursor.
   bool get aiming => cursorPlacement && activeTool != null;
 
@@ -187,6 +191,7 @@ class ChartController extends ChangeNotifier {
     final tool = activeTool;
     if (tool != null) {
       _place(tool, position, size);
+      _holdingAfterPlace = true;
       return true;
     }
     if (_grabSelectedDrawing(position, size)) return true;
@@ -297,7 +302,8 @@ class ChartController extends ChangeNotifier {
       Offset(point.dx.clamp(rect.left, rect.right), point.dy.clamp(rect.top, rect.bottom));
 
   /// Moves the grabbed anchor to the pointer, or the whole drawing by how
-  /// far the pointer has come since it went down.
+  /// far the pointer has come since it went down — whole intervals, so its
+  /// points stay on the candle grid.
   bool _drawingPointerMove(Offset position, Size size) {
     final drag = _dragging;
     if (drag == null) return false;
@@ -305,10 +311,9 @@ class ChartController extends ChangeNotifier {
     final now = projection.coordinatesOf(position);
     final List<Coordinates> points;
     if (drag.anchor != null) {
-      points = [...drag.original.points];
-      points[drag.anchor!] = _snapped(now, size);
+      points = movedAnchor(drag.original, drag.anchor!, _snapped(now, size));
     } else {
-      final dt = now.timestamp - drag.from.timestamp;
+      final dt = _onInterval(now.timestamp - drag.from.timestamp);
       final ratio = _viewConfig.logScale && drag.from.price > 0 ? now.price / drag.from.price : null;
       final dp = now.price - drag.from.price;
       points = [
@@ -332,16 +337,17 @@ class ChartController extends ChangeNotifier {
   }
 
   /// How far in pixels the magnet reaches, in price only.
-  static const magnetReach = 20.0;
+  static const magnetReach = 30.0;
 
-  /// With the magnet on, a point over a candle — the nearest one, as the
-  /// crosshair aligns — lands on its open, high, low or close when one is
-  /// within [magnetReach], at the candle's own time.
+  /// A point lands on the candle grid in time, as the crosshair aligns.
+  /// With the magnet on, over a candle it also lands on its open, high,
+  /// low or close when one is within [magnetReach].
   Coordinates _snapped(Coordinates c, Size size) {
-    if (!magnet || _candles.isEmpty) return c;
+    final onGrid = Coordinates(timestamp: _onInterval(c.timestamp), price: c.price);
+    if (!magnet || _candles.isEmpty) return onGrid;
     final halfInterval = _interval.inMilliseconds ~/ 2;
     final index = _firstCandleFrom(c.timestamp - halfInterval);
-    if (index == _candles.length || _candles[index].timestamp - halfInterval > c.timestamp) return c;
+    if (index == _candles.length || _candles[index].timestamp - halfInterval > c.timestamp) return onGrid;
     final candle = _candles[index];
     final projection = projectionFor(size);
     final y = projection.yForPrice(c.price);
@@ -354,8 +360,14 @@ class ChartController extends ChangeNotifier {
         best = level;
       }
     }
-    if (best == null) return c;
+    if (best == null) return onGrid;
     return Coordinates(timestamp: candle.timestamp, price: best);
+  }
+
+  /// [time] — or a span of time — rounded to the nearest whole interval.
+  int _onInterval(int time) {
+    final interval = _interval.inMilliseconds;
+    return interval == 0 ? time : (time / interval).round() * interval;
   }
 
   /// The index of the first candle at or after [timestamp], by bisection.
@@ -598,6 +610,7 @@ class ChartController extends ChangeNotifier {
     _dragging = null;
     _movingCrosshair = false;
     _movingCursor = false;
+    _holdingAfterPlace = false;
   }
 
   void onPointerMove(
@@ -613,6 +626,10 @@ class ChartController extends ChangeNotifier {
     }
     if (_movingCrosshair) {
       _moveCrosshairBy(event.delta, size);
+      return;
+    }
+    if (_holdingAfterPlace) {
+      setCrosshairPosition(event.localPosition);
       return;
     }
     if (_eventOrigin == EventOrigin.handle) {
