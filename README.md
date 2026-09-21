@@ -12,7 +12,7 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   host where they are.
 - Drawings (`ChartDrawing`): trend line, ray, extended line, horizontal
   line and ray, vertical line, rectangle, parallel channel, Fibonacci
-  retracement, text and measure, anchored in time and price. The chart
+  retracement and extension, text and measure, anchored in time and price. The chart
   hit-tests, selects and drags them, snaps anchors to OHLC with the magnet,
   places new ones with `activeTool`, and reports every change back through
   callbacks; `toJson`/`fromJson` carry them wherever the host keeps them.

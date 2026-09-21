@@ -46,6 +46,8 @@ class DrawingPainter {
     switch (drawing) {
       case ChartFibRetracement():
         _drawFibLabels(drawing);
+      case ChartFibExtension():
+        _drawFibExtensionLabels(drawing);
       case ChartMeasure():
         _drawMeasureLabel(drawing);
       case ChartText():
@@ -66,6 +68,16 @@ class DrawingPainter {
     final left = min(anchors[0].dx, anchors[1].dx);
     for (final level in fibLevels) {
       final price = fibPrice(drawing.points, level);
+      final y = projection.yForPrice(price);
+      final tp = _textPainter('${level.toStringAsFixed(3)}  ${formatPrice(price)}', drawing.color);
+      tp.paint(canvas, Offset(left + 4, y - tp.height - 1));
+    }
+  }
+
+  void _drawFibExtensionLabels(ChartFibExtension drawing) {
+    final left = projection.xForTime(drawing.points[2].timestamp);
+    for (final level in fibExtensionLevels) {
+      final price = fibExtensionPrice(drawing.points, level);
       final y = projection.yForPrice(price);
       final tp = _textPainter('${level.toStringAsFixed(3)}  ${formatPrice(price)}', drawing.color);
       tp.paint(canvas, Offset(left + 4, y - tp.height - 1));

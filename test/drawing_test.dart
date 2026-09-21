@@ -167,6 +167,27 @@ void main() {
       expect(fibPrice(points, 1), 90);
       expect(fibPrice(points, 0), 50);
     });
+
+    test('fibonacci extension projects the first move from the third point, levels running to the right edge', () {
+      // A move of -40 from 90 to 50, projected from 70: 0 sits at 70, 1 at 30.
+      const fib = ChartFibExtension(
+        id: 'x',
+        points: [...points, Coordinates(timestamp: 30, price: 70)],
+        color: Colors.blue,
+      );
+      expect(fibExtensionPrice(fib.points, 0), 70);
+      expect(fibExtensionPrice(fib.points, 1), 30);
+      expect(fibExtensionPrice(fib.points, 1.618), closeTo(5.28, 1e-9));
+      final segments = drawingSegments(fib, projection);
+      expect(segments, hasLength(2 + fibExtensionLevels.length));
+      expect(segments[0], (const Offset(10, 10), const Offset(50, 50)));
+      expect(segments[1], (const Offset(50, 50), const Offset(30, 30)));
+      expect(segments[2], (const Offset(30, 30), const Offset(100, 30)));
+      expect(segments[8].$1.dy, 70);
+      expect(drawingAnchors(fib, projection), hasLength(3));
+      expect(hitTestDrawing(fib, const Offset(80, 31), projection, handles: false), isNotNull);
+      expect(hitTestDrawing(fib, const Offset(5, 31), projection, handles: false), isNull);
+    });
   });
 
   test('a drawing survives the round trip through JSON, id as a string', () {

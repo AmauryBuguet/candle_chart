@@ -112,6 +112,7 @@ enum ChartDrawingTool {
   rectangle(2),
   parallelChannel(3),
   fibRetracement(2),
+  fibExtension(3),
   text(1),
   measure(2);
 
@@ -131,6 +132,7 @@ enum ChartDrawingTool {
       rectangle => ChartRectangle(id: id, points: points, color: color),
       parallelChannel => ChartParallelChannel(id: id, points: points, color: color),
       fibRetracement => ChartFibRetracement(id: id, points: points, color: color),
+      fibExtension => ChartFibExtension(id: id, points: points, color: color),
       ChartDrawingTool.text => ChartText(id: id, points: points, color: color, text: text),
       measure => ChartMeasure(id: id, points: points, color: color),
     };

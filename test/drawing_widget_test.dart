@@ -36,6 +36,7 @@ List<ChartDrawing> _everyKind() {
     ChartFibRetracement(id: 9, points: [a, b], color: Colors.blue),
     ChartText(id: 10, points: [c], color: Colors.blue, text: 'note', selected: false),
     ChartMeasure(id: 11, points: [a, b], color: Colors.blue),
+    ChartFibExtension(id: 12, points: [a, b, c], color: Colors.blue),
   ];
 }
 

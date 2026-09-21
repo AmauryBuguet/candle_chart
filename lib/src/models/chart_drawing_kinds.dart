@@ -333,6 +333,45 @@ class ChartFibRetracement extends ChartDrawing {
   );
 }
 
+/// Trend-based Fibonacci extension: the move from the first point to the
+/// second, projected from the third, each level labelled with its ratio and
+/// price.
+class ChartFibExtension extends ChartDrawing {
+  const ChartFibExtension({
+    required super.id,
+    required super.points,
+    required super.color,
+    super.width,
+    super.lineStyle,
+    super.selected,
+    super.locked,
+    super.hidden,
+  });
+
+  @override
+  ChartDrawingTool get tool => ChartDrawingTool.fibExtension;
+
+  @override
+  ChartFibExtension copyWith({
+    List<Coordinates>? points,
+    Color? color,
+    double? width,
+    ChartLineStyle? lineStyle,
+    bool? selected,
+    bool? locked,
+    bool? hidden,
+  }) => ChartFibExtension(
+    id: id,
+    points: points ?? this.points,
+    color: color ?? this.color,
+    width: width ?? this.width,
+    lineStyle: lineStyle ?? this.lineStyle,
+    selected: selected ?? this.selected,
+    locked: locked ?? this.locked,
+    hidden: hidden ?? this.hidden,
+  );
+}
+
 /// A box between two points labelled with the change in price and percent, the bars and the time it spans.
 class ChartMeasure extends ChartDrawing {
   const ChartMeasure({

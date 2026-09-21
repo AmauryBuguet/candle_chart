@@ -12,6 +12,15 @@ const List<double> fibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 double fibPrice(List<Coordinates> points, double level) =>
     points[0].price + (points[1].price - points[0].price) * (1 - level);
 
+/// The trend-based Fibonacci extension ratios: 0 sits on the third point's
+/// price, 1 a whole first-to-second move above (or below) it.
+const List<double> fibExtensionLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
+
+/// The price of a Fibonacci extension [level]: the move from the first
+/// point to the second, scaled by [level], projected from the third.
+double fibExtensionPrice(List<Coordinates> points, double level) =>
+    points[2].price + (points[1].price - points[0].price) * level;
+
 /// The price pane's mapping, the only thing drawing geometry needs.
 class DrawingProjection {
   const DrawingProjection({
@@ -114,6 +123,11 @@ List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p
     ChartFibRetracement() => [
       for (final y in _fibYs(drawing, p)) (Offset(min(a[0].dx, a[1].dx), y), Offset(max(a[0].dx, a[1].dx), y)),
     ],
+    ChartFibExtension() => [
+      (a[0], a[1]),
+      (a[1], a[2]),
+      for (final y in _fibExtensionYs(drawing, p)) (Offset(a[2].dx, y), Offset(rect.right, y)),
+    ],
     ChartText() => const [],
   };
 }
@@ -138,6 +152,9 @@ Path? drawingArea(ChartDrawing drawing, DrawingProjection p) {
 
 Iterable<double> _fibYs(ChartFibRetracement drawing, DrawingProjection p) =>
     fibLevels.map((level) => p.yForPrice(fibPrice(drawing.points, level)));
+
+Iterable<double> _fibExtensionYs(ChartFibExtension drawing, DrawingProjection p) =>
+    fibExtensionLevels.map((level) => p.yForPrice(fibExtensionPrice(drawing.points, level)));
 
 /// Whether [position] is on the drawing: on an anchor when [handles] are
 /// live, else on a stroke — a filled area is not a handle on it.

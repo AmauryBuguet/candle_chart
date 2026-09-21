@@ -1,3 +1,7 @@
+## 0.4.8
+
+* Trend-based Fibonacci extension (`ChartFibExtension`, `ChartDrawingTool.fibExtension`), on three points: the move from the first to the second, projected from the third at the ratios 0 to 4.236 (`fibExtensionLevels`, `fibExtensionPrice`). The two legs are drawn, the levels run from the third point to the right edge, each labelled with its ratio and price.
+
 ## 0.4.7
 
 * A parallel channel's third point sets only its width: the second line is the first carried straight across, so the two are the sides of a rectangle, and the third handle sits in the middle of the second line.
