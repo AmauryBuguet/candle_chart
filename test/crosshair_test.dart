@@ -20,9 +20,9 @@ List<ChartCandle> _candles() {
   ];
 }
 
-Future<void> _pumpChart(WidgetTester tester) async {
-  // The crosshair is a desktop affordance, so the surface has to be one.
-  tester.view.physicalSize = const Size(1400, 1000);
+Future<void> _pumpChart(WidgetTester tester, {Size size = const Size(1400, 1000)}) async {
+  // Hover is a desktop affordance, so the surface is one unless said otherwise.
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -86,4 +86,51 @@ void main() {
 
     expect(_crosshair(tester), isNull);
   });
+
+  testWidgets('a finger leaving the page is reported as a hover on the web, and never moves the crosshair', (
+    tester,
+  ) async {
+    await _pumpChart(tester, size: const Size(400, 800));
+    final center = tester.getCenter(find.byType(TradingChart));
+    // The web engine hands the region a hover of kind touch after every
+    // lift; the test binding drops it before the region, so it is fed
+    // straight in.
+    final region = tester.widget<MouseRegion>(
+      find.descendant(of: find.byType(TradingChart), matching: find.byType(MouseRegion)),
+    );
+    await tester.tapAt(center);
+    await tester.pump();
+    region.onHover!(PointerHoverEvent(position: center + const Offset(80, 80), kind: PointerDeviceKind.touch));
+    await tester.pump();
+    expect(_crosshair(tester), center);
+    await tester.tapAt(center);
+    await tester.pump();
+    region.onEnter!(PointerEnterEvent(position: center, kind: PointerDeviceKind.touch));
+    await tester.pump();
+    expect(_crosshair(tester), isNull);
+    await tester.pumpAndSettle();
+  });
+
+  for (final (name, size) in [
+    ('on a phone', const Size(400, 800)),
+    ('under a finger on a desktop', const Size(1400, 1000)),
+  ]) {
+    testWidgets('$name a tap shows the crosshair, a swipe from elsewhere moves it, a tap hides it', (tester) async {
+      await _pumpChart(tester, size: size);
+      final center = tester.getCenter(find.byType(TradingChart));
+
+      await tester.tapAt(center);
+      await tester.pump();
+      expect(_crosshair(tester), center);
+
+      await tester.dragFrom(center + const Offset(-100, 200), const Offset(50, 20));
+      await tester.pump();
+      expect(_crosshair(tester), center + const Offset(50, 20));
+
+      await tester.tapAt(center);
+      await tester.pump();
+      expect(_crosshair(tester), isNull);
+      await tester.pumpAndSettle();
+    });
+  }
 }

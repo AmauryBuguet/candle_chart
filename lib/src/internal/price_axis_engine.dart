@@ -10,12 +10,16 @@ class PriceAxisEngine {
   PriceAxis axis = const PriceAxis();
   bool anchored = true;
 
-  /// Refits [axis] to the candles visible within [timeAxis]. No-op while
-  /// [anchored] is false (the user has manually panned/zoomed the price axis).
+  /// Refits [axis] to the candles visible within [timeAxis], with
+  /// [priceMargin] of their range kept above and below — of their log
+  /// range under a log scale, so the room takes the same height either
+  /// way. No-op while [anchored] is false (the user has manually
+  /// panned/zoomed the price axis).
   void recompute({
     required List<ChartCandle> candles,
     required TimeAxis timeAxis,
     required double priceMargin,
+    bool logScale = false,
   }) {
     if (!anchored) return;
 
@@ -33,18 +37,17 @@ class PriceAxisEngine {
     final sublist = candles.sublist(firstIndex, lastIndex != -1 ? lastIndex : null);
     final minValue = sublist.map((e) => e.low).min;
     final maxValue = sublist.map((e) => e.high).max;
+    if (logScale && minValue > 0) {
+      var room = (log(maxValue) - log(minValue)) * priceMargin;
+      if (room == 0) room = log(1.01);
+      axis = PriceAxis(start: exp(log(minValue) - room), end: exp(log(maxValue) + room));
+      return;
+    }
     var offset = (maxValue - minValue) * priceMargin;
     if (offset == 0) {
       offset = minValue * 0.01;
     }
     axis = PriceAxis(start: minValue - offset, end: maxValue + offset);
-  }
-
-  void setAnchored({required List<ChartCandle> candles, required TimeAxis timeAxis, required double priceMargin}) {
-    if (!anchored) {
-      anchored = true;
-      recompute(candles: candles, timeAxis: timeAxis, priceMargin: priceMargin);
-    }
   }
 
   /// Zooms the axis about its middle by a pointer moved [dy] pixels over a

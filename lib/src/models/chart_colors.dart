@@ -13,6 +13,7 @@ class ChartColors extends Equatable {
     this.crosshair = Colors.white70,
     this.crosshairLabelBackground = Colors.blueGrey,
     this.crosshairLabelText = Colors.white,
+    this.cursor = Colors.white,
     this.grid = Colors.white70,
     this.positionProfit = Colors.green,
     this.positionLoss = Colors.red,
@@ -41,6 +42,10 @@ class ChartColors extends Equatable {
   /// Text color of the crosshair's time/price labels.
   final Color crosshairLabelText;
 
+  /// Color of the cursor a tool is aimed with on a phone, drawn thicker
+  /// than the crosshair so the two tell apart.
+  final Color cursor;
+
   /// Color of the grid lines.
   final Color grid;
 
@@ -65,6 +70,7 @@ class ChartColors extends Equatable {
     crosshair,
     crosshairLabelBackground,
     crosshairLabelText,
+    cursor,
     grid,
     positionProfit,
     positionLoss,

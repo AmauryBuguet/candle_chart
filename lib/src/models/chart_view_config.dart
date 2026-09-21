@@ -47,6 +47,14 @@ class ChartViewConfig extends Equatable {
     logScale: logScale ?? this.logScale,
   );
 
+  /// Whether [other] asks for the same visible time window: the same
+  /// candle counts and right margin, whatever its scale and price margin.
+  bool sameTimeWindow(ChartViewConfig other) =>
+      startCandles == other.startCandles &&
+      minCandles == other.minCandles &&
+      maxCandles == other.maxCandles &&
+      rightMargin == other.rightMargin;
+
   @override
   List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin, logScale];
 }

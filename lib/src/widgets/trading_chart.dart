@@ -62,6 +62,19 @@ class TradingChartController extends ChangeNotifier {
 /// thing the chart hit-tests and drags itself, since their geometry is its
 /// own; the host still owns the list and every change comes back to it.
 ///
+/// A mouse hovers the crosshair and grabs drawings as it clicks. Under a
+/// finger the crosshair is a mode, whatever the screen: off, a tap on a
+/// drawing selects it, a tap on nothing shows the crosshair there, and a
+/// swipe pans — or moves the drawing it starts on, once that one is
+/// selected; on, a swipe anywhere moves the crosshair by as much from
+/// where it is, and a tap anywhere hides it. A mouse selects a drawing
+/// with a click too, and moves it only from the next one.
+///
+/// A tool is aimed with the mouse, a click placing each point. Below
+/// desktop width it is aimed with a cursor instead: it starts in the
+/// middle of the price pane, swipes anywhere move it by as much, a tap
+/// places the point under it, and it stays for the next point.
+///
 /// On desktop the chart takes focus on a click and answers the keyboard:
 /// Escape or a right click drops a half-placed drawing and the selection
 /// and reports through [onDrawingCancelled], Delete or Backspace deletes the
@@ -153,8 +166,9 @@ class TradingChart extends StatefulWidget {
   /// host replaces entries in this list.
   final List<ChartDrawing> drawings;
 
-  /// The tool in hand: while set, taps in the price pane place its points,
-  /// and [onDrawingCreated] is called with the drawing once the last one is
+  /// The tool in hand: while set, clicks in the price pane — or taps, with
+  /// the cursor, below desktop width — place its points, and
+  /// [onDrawingCreated] is called with the drawing once the last one is
   /// down. Nothing is selected or panned meanwhile.
   final ChartDrawingTool? activeTool;
 
@@ -244,7 +258,7 @@ class _TradingChartState extends State<TradingChart> {
       colors: widget.style.colors,
     );
     _syncDrawingInputs();
-    if (widget.activeTool != oldWidget.activeTool) _controller.dropPlacement();
+    if (widget.activeTool != oldWidget.activeTool) _controller.toolChanged();
     _reportPriceAxisIfChanged();
   }
 
@@ -317,15 +331,19 @@ class _TradingChartState extends State<TradingChart> {
 
   /// A pointer that is already down is dragging something — the chart itself,
   /// or a host layer above it — so it is not hovering, and re-arming the
-  /// crosshair under it would flash it mid-drag.
+  /// crosshair under it would flash it mid-drag. A finger never hovers: the
+  /// web engine reports one leaving the page as a hover, which would park
+  /// the crosshair under it.
   void _handleHover(PointerEvent event) {
-    if (event.down) return;
+    if (event.down || event.kind == PointerDeviceKind.touch) return;
     _controller.setCrosshairPosition(event.localPosition);
   }
 
-  /// Below desktop width there is no hover, so the crosshair follows taps
-  /// and placement has no preview. A desktop OS is judged on the window's
-  /// width, a phone or tablet on its shortest side, whichever way it is held.
+  /// Below desktop width a tool is aimed with the cursor, and the host is
+  /// told. A desktop OS is judged on the window's width, a phone or tablet
+  /// on its shortest side, whichever way it is held. How a pointer behaves
+  /// otherwise is the pointer's kind, not the width: a finger taps, a mouse
+  /// hovers.
   static bool _isMobile(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final width = switch (defaultTargetPlatform) {
@@ -341,6 +359,7 @@ class _TradingChartState extends State<TradingChart> {
       builder: (context, c) {
         _syncController(c.biggest);
         final isMobile = _isMobile(context);
+        _controller.cursorPlacement = isMobile;
         return CallbackShortcuts(
           bindings: _shortcuts,
           child: Focus(
@@ -349,7 +368,9 @@ class _TradingChartState extends State<TradingChart> {
               child: MouseRegion(
                 onEnter: _handleHover,
                 onHover: _handleHover,
-                onExit: (_) => _controller.setCrosshairPosition(null),
+                onExit: (event) {
+                  if (event.kind != PointerDeviceKind.touch) _controller.setCrosshairPosition(null);
+                },
                 child: Listener(
                   onPointerDown: (event) {
                     _focus.requestFocus();
@@ -368,12 +389,10 @@ class _TradingChartState extends State<TradingChart> {
                   onPointerMove: (event) =>
                       _controller.onPointerMove(event, c.biggest, onDragUpdate: widget.onDragUpdate),
                   onPointerUp: (event) async {
-                    _controller.endDrawingDrag();
-                    if (!isMobile) {
-                      _controller.setCrosshairPosition(event.localPosition);
-                    }
+                    _controller.onPointerUp(event, c.biggest);
                     await widget.onDragEnd();
                   },
+                  onPointerCancel: (_) => _controller.onPointerCancel(),
                   onPointerSignal: (event) => _controller.onPointerSignal(event, c.biggest),
                   child: GestureDetector(
                     onDoubleTap: _controller.onDoubleTap,
@@ -388,7 +407,8 @@ class _TradingChartState extends State<TradingChart> {
                         layout: _controller.layoutFor(c.biggest),
                         priceAxis: _controller.priceAxis,
                         timeAxis: _controller.timeAxis,
-                        crosshairPosition: isMobile ? null : _controller.crosshairFor(c.biggest),
+                        crosshairPosition: _controller.crosshairFor(c.biggest),
+                        crosshairIsCursor: _controller.aiming,
                         positions: widget.candles.isNotEmpty ? widget.positions : const [],
                         style: widget.style,
                         formatPrice: widget.formatPrice,
@@ -397,7 +417,7 @@ class _TradingChartState extends State<TradingChart> {
                         paneAxes: _controller.paneAxes,
                         logScale: widget.viewConfig.logScale,
                         drawings: widget.drawings,
-                        placing: isMobile ? null : _controller.placingFor(c.biggest),
+                        placing: _controller.placingFor(c.biggest),
                       ),
                     ),
                   ),

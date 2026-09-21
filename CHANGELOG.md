@@ -1,3 +1,10 @@
+## 0.4.6
+
+* A drawing is selected before it moves: a click or tap on it selects it, and only the selected one is dragged, so a swipe starting on an unselected drawing pans. A drawing is hit on its strokes only, no longer inside a filled area, within 8 pixels for a mouse and 16 for a finger (`DrawingHitTolerance`).
+* Under a finger — by the pointer's kind, whatever the window's width — the crosshair is a mode. Off, a tap on nothing shows the crosshair there. On, a swipe anywhere moves the crosshair by as much from where it is, and a tap anywhere hides it. On the web a finger's lift, which the engine reports as a hover, no longer parks the crosshair under it.
+* Below desktop width a tool is aimed with a cursor: it starts in the middle of the price pane, swipes anywhere move it by as much, a tap places the point under it and it stays for the next one; the placement preview follows it. The crosshair is put away for it. The cursor is drawn in `ChartColors.cursor`, thicker than the crosshair. A tap on nothing with a drawing selected only drops the selection.
+* Under a log scale the price axis fits the visible candles with `priceMargin` of their log range above and below, instead of a linear margin that left most of the pane empty under a wide range. Switching `logScale` (or `priceMargin`) refits the prices under the same time window instead of resetting the view to the live edge.
+
 ## 0.4.5
 
 * The magnet snaps to the candle nearest in time, as the crosshair aligns, rather than the one whose slot the pointer is in, and reaches 20 pixels in price instead of 10. With a tool in hand the crosshair is drawn where the next point would land, so the pull shows before the click.

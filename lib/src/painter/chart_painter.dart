@@ -46,6 +46,7 @@ class ChartPainter extends CustomPainter {
     required this.priceAxis,
     required this.timeAxis,
     this.crosshairPosition,
+    this.crosshairIsCursor = false,
     required this.positions,
     required this.formatPrice,
     this.overlays = const [],
@@ -64,6 +65,10 @@ class ChartPainter extends CustomPainter {
   final PriceAxis priceAxis;
   final TimeAxis timeAxis;
   final Offset? crosshairPosition;
+
+  /// Whether [crosshairPosition] is the cursor a tool is aimed with, drawn
+  /// in its own colour and thicker.
+  final bool crosshairIsCursor;
   final List<ChartPosition> positions;
 
   /// Formats a price for display in axis/crosshair labels.
@@ -702,9 +707,9 @@ class ChartPainter extends CustomPainter {
   void _drawCrosshair(Canvas canvas, Offset position, ChartCandle? candle, String dateFormat, Rect chartRect) {
     final backgroundPaint = Paint()..color = style.colors.crosshairLabelBackground;
     final paint = Paint()
-      ..color = style.colors.crosshair
+      ..color = crosshairIsCursor ? style.colors.cursor : style.colors.crosshair
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.6;
+      ..strokeWidth = crosshairIsCursor ? 1.2 : 0.6;
 
     double dx = position.dx;
     if (candle != null) {
@@ -952,6 +957,7 @@ class ChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant ChartPainter oldDelegate) {
     return oldDelegate.crosshairPosition != crosshairPosition ||
+        oldDelegate.crosshairIsCursor != crosshairIsCursor ||
         oldDelegate.candles != candles ||
         oldDelegate.lines != lines ||
         oldDelegate.orderLines != orderLines ||

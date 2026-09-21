@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trading_chart/src/painter/chart_painter.dart';
 import 'package:trading_chart/trading_chart.dart';
 
 final _start = DateTime.now().millisecondsSinceEpoch - 40 * 60000;
@@ -122,7 +123,11 @@ void main() {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: _PlacingHost(onSelected: (_) {}))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: _PlacingHost(onSelected: (_) {})),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tapAt(const Offset(300, 300));
@@ -140,12 +145,53 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('on a phone the tool is aimed with a cursor: swipes move it, taps place under it', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: _PlacingHost(onSelected: (_) {})),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final chart = tester.getRect(find.byType(TradingChart));
+
+    ChartPainter painter() =>
+        tester
+                .widget<CustomPaint>(find.descendant(of: find.byType(TradingChart), matching: find.byType(CustomPaint)))
+                .painter!
+            as ChartPainter;
+    expect(painter().crosshairIsCursor, isTrue);
+    expect(painter().crosshairPosition, painter().layout.priceRect.center);
+
+    await tester.tapAt(chart.topLeft + const Offset(20, 20));
+    await tester.pump();
+    expect(tester.widget<TradingChart>(find.byType(TradingChart)).drawings, isEmpty);
+    await tester.dragFrom(chart.bottomRight - const Offset(40, 40), const Offset(-100, 0));
+    await tester.pump();
+    await tester.tapAt(chart.topLeft + const Offset(20, 20));
+    await tester.pump();
+
+    final drawing = tester.widget<TradingChart>(find.byType(TradingChart)).drawings.single;
+    final rect = painter().layout.priceRect;
+    final points = [for (final p in drawing.points) painter().projectionFor(rect).offsetOf(p)];
+    expect(painter().crosshairIsCursor, isFalse);
+    expect(points[0].dx, closeTo(rect.center.dx, 1));
+    expect(points[1].dx, closeTo(rect.center.dx - 100, 1));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a host that keeps the new drawing selected and drops the tool at once is left alone', (tester) async {
     final selected = <Object?>[];
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: _PlacingHost(onSelected: selected.add))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: _PlacingHost(onSelected: selected.add)),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tapAt(const Offset(300, 300));

@@ -36,11 +36,17 @@ class DrawingHit {
   final int? anchor;
 }
 
-/// Pixels a pointer may miss a line by and still hit it.
-const double drawingHitTolerance = 6;
+/// How far a pointer may miss a stroke or an anchor by and still hit it,
+/// in pixels: a mouse is precise, a finger is not.
+class DrawingHitTolerance {
+  const DrawingHitTolerance({required this.stroke, required this.handle});
 
-/// Pixels a pointer may miss an anchor by and still grab its handle.
-const double handleHitTolerance = 9;
+  static const mouse = DrawingHitTolerance(stroke: 8, handle: 10);
+  static const touch = DrawingHitTolerance(stroke: 16, handle: 20);
+
+  final double stroke;
+  final double handle;
+}
 
 /// The screen positions of a drawing's anchors.
 List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p) => [
@@ -89,30 +95,29 @@ Path? drawingArea(ChartDrawing drawing, DrawingProjection p) {
 double _fibY(List<Offset> a, double level) => a[0].dy + (a[1].dy - a[0].dy) * level;
 
 /// Whether [position] is on the drawing: on an anchor when [handles] are
-/// live, else on a stroke or inside a filled area.
+/// live, else on a stroke — a filled area is not a handle on it.
 DrawingHit? hitTestDrawing(
   ChartDrawing drawing,
   Offset position,
   DrawingProjection p, {
   required bool handles,
+  DrawingHitTolerance tolerance = DrawingHitTolerance.mouse,
   Size Function(ChartText text)? textSize,
 }) {
   if (drawing.hidden) return null;
   final anchors = drawingAnchors(drawing, p);
   if (handles) {
     for (var i = 0; i < anchors.length; i++) {
-      if ((anchors[i] - position).distance <= handleHitTolerance) return DrawingHit(anchor: i);
+      if ((anchors[i] - position).distance <= tolerance.handle) return DrawingHit(anchor: i);
     }
   }
   if (drawing is ChartText) {
     final size = textSize?.call(drawing) ?? const Size(40, 16);
-    return (anchors[0] & size).inflate(drawingHitTolerance).contains(position) ? const DrawingHit() : null;
+    return (anchors[0] & size).inflate(tolerance.stroke).contains(position) ? const DrawingHit() : null;
   }
   for (final (from, to) in drawingSegments(drawing, p)) {
-    if (_distanceToSegment(position, from, to) <= drawingHitTolerance) return const DrawingHit();
+    if (_distanceToSegment(position, from, to) <= tolerance.stroke) return const DrawingHit();
   }
-  final area = drawingArea(drawing, p);
-  if (area != null && area.contains(position)) return const DrawingHit();
   return null;
 }
 

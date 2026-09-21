@@ -50,7 +50,12 @@ class ChartController extends ChangeNotifier {
        _indicators = indicators,
        _colors = colors,
        _timeAxisEngine = TimeAxisEngine(interval: interval, viewConfig: viewConfig) {
-    _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
+    _priceAxisEngine.recompute(
+      candles: _candles,
+      timeAxis: timeAxis,
+      priceMargin: _viewConfig.priceMargin,
+      logScale: _viewConfig.logScale,
+    );
     _recomputeIndicators();
     _syncPanes();
     margins = _computeMargins();
@@ -71,6 +76,37 @@ class ChartController extends ChangeNotifier {
   EventOrigin _eventOrigin = EventOrigin.other;
   int? _draggedHandle;
   double? _lastHorizontalScale;
+
+  /// The pointer that is down — the first finger, a second one being a
+  /// pinch — whether it is a finger, where it went down and whether it has
+  /// moved past the slop since: a finger lifted without moving is a tap.
+  int? _pointer;
+  bool _touch = false;
+  Offset? _downPosition;
+  EventOrigin _downOrigin = EventOrigin.other;
+  bool _dragged = false;
+
+  /// Under a finger the crosshair is a mode: a tap on nothing shows it
+  /// there, swipes anywhere then move it by as much from where it is, and
+  /// a tap anywhere hides it. A mouse hovers instead.
+  bool _crosshairPinned = false;
+  bool _movingCrosshair = false;
+
+  /// On a phone a tool is aimed with a cursor rather than the finger: it
+  /// starts in the middle of the price pane, swipes anywhere move it by as
+  /// much, a tap places the point under it. Set by the widget.
+  bool cursorPlacement = false;
+  Offset? _cursor;
+  bool _movingCursor = false;
+
+  /// Whether the crosshair drawn is the cursor.
+  bool get aiming => cursorPlacement && activeTool != null;
+
+  Offset _cursorFor(Size size) => _cursor ??= layoutFor(size).priceRect.center;
+
+  /// Where the tool's next point would come from: the cursor on a phone,
+  /// the pointer otherwise.
+  Offset? _aimFor(Size size) => aiming ? _cursorFor(size) : crosshairPosition;
 
   /// Told the timestamp of the oldest candle when the view nears it, once
   /// per oldest candle, so the host can fetch what comes before.
@@ -101,15 +137,11 @@ class ChartController extends ChangeNotifier {
   ChartDrawing? placingFor(Size size) {
     final tool = activeTool;
     if (tool == null || _placed.isEmpty) return null;
-    final pointer = crosshairPosition;
+    final pointer = _aimFor(size);
     final next = pointer == null ? _placed.last : _snapped(_getEventPosition(pointer, size), size);
     final points = [..._placed, for (var i = _placed.length; i < tool.pointCount; i++) next];
     return tool.create(id: '_placing', points: points, color: _colors.drawing);
   }
-
-  /// Ends whatever the pointer was doing to a drawing; the host commits on
-  /// its own `onDragEnd`.
-  void endDrawingDrag() => _dragging = null;
 
   /// Drops the tool's half-placed points and the selection, and tells the
   /// host, which may put the tool down.
@@ -120,10 +152,17 @@ class ChartController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Drops the tool's half-placed points without touching the selection or
-  /// notifying — for when the host swaps the tool, mid-build.
-  void dropPlacement() => _placed = const [];
-
+  /// The tool changed hands, mid-build: the half-placed points go, the
+  /// cursor starts over, and on a phone the crosshair is put away for it.
+  /// Touches neither the selection nor the listeners.
+  void toolChanged() {
+    _placed = const [];
+    _cursor = null;
+    if (aiming && _crosshairPinned) {
+      _crosshairPinned = false;
+      crosshairPosition = null;
+    }
+  }
 
   void deleteSelectedDrawing() {
     final selected = selectedDrawing;
@@ -141,41 +180,121 @@ class ChartController extends ChangeNotifier {
     );
   }
 
-  /// Whether a pointer going down at [position] was for a drawing: placing
-  /// a point with the tool in hand, or grabbing one to select or move it.
+  /// Whether a mouse going down at [position] was for a drawing: placing
+  /// a point with the tool in hand, grabbing the selected one to move it,
+  /// or selecting the one under it — which moves only from the next click.
   bool _drawingPointerDown(Offset position, Size size) {
     final tool = activeTool;
     if (tool != null) {
-      _placed = [..._placed, _snapped(_getEventPosition(position, size), size)];
-      if (_placed.length == tool.pointCount) {
-        onDrawingCreated?.call(
-          tool.create(id: 'drawing-${DateTime.now().microsecondsSinceEpoch}', points: _placed, color: _colors.drawing),
-        );
-        _placed = const [];
-      }
-      notifyListeners();
+      _place(tool, position, size);
       return true;
     }
-    final projection = projectionFor(size);
-    final selected = selectedDrawing;
-    if (selected != null && !selected.locked) {
-      final hit = hitTestDrawing(selected, position, projection, handles: true, textSize: _textSize);
-      if (hit != null) {
-        _dragging = (original: selected, anchor: hit.anchor, from: projection.coordinatesOf(position));
-        return true;
-      }
-    }
-    for (final drawing in drawings.reversed) {
-      if (hitTestDrawing(drawing, position, projection, handles: false, textSize: _textSize) == null) continue;
-      if (!drawing.locked) {
-        _dragging = (original: drawing, anchor: null, from: projection.coordinatesOf(position));
-      }
-      if (!drawing.selected) onDrawingSelected?.call(drawing.id);
+    if (_grabSelectedDrawing(position, size)) return true;
+    final hit = _drawingAt(position, size);
+    if (hit != null) {
+      if (!hit.selected) onDrawingSelected?.call(hit.id);
       return true;
     }
-    if (selected != null) onDrawingSelected?.call(null);
+    if (selectedDrawing != null) onDrawingSelected?.call(null);
     return false;
   }
+
+  DrawingHitTolerance get _tolerance => _touch ? DrawingHitTolerance.touch : DrawingHitTolerance.mouse;
+
+  /// The topmost drawing under [position], by its body.
+  ChartDrawing? _drawingAt(Offset position, Size size) {
+    final projection = projectionFor(size);
+    for (final drawing in drawings.reversed) {
+      if (hitTestDrawing(drawing, position, projection, handles: false, tolerance: _tolerance, textSize: _textSize) !=
+          null) {
+        return drawing;
+      }
+    }
+    return null;
+  }
+
+  /// Places the tool's next point at [position]; the last one creates the
+  /// drawing.
+  void _place(ChartDrawingTool tool, Offset position, Size size) {
+    _placed = [..._placed, _snapped(_getEventPosition(position, size), size)];
+    if (_placed.length == tool.pointCount) {
+      onDrawingCreated?.call(
+        tool.create(id: 'drawing-${DateTime.now().microsecondsSinceEpoch}', points: _placed, color: _colors.drawing),
+      );
+      _placed = const [];
+    }
+    notifyListeners();
+  }
+
+  /// Takes hold of the selected drawing, by an anchor or its body, when the
+  /// pointer went down on it and it is not locked.
+  bool _grabSelectedDrawing(Offset position, Size size) {
+    final selected = selectedDrawing;
+    if (selected == null || selected.locked) return false;
+    final projection = projectionFor(size);
+    final hit = hitTestDrawing(
+      selected,
+      position,
+      projection,
+      handles: true,
+      tolerance: _tolerance,
+      textSize: _textSize,
+    );
+    if (hit == null) return false;
+    _dragging = (original: selected, anchor: hit.anchor, from: projection.coordinatesOf(position));
+    return true;
+  }
+
+  /// A finger's tap: aiming, places the tool's point under the cursor;
+  /// with the crosshair up, hides it, wherever the tap. Otherwise places
+  /// the tool's point, selects the drawing under it, drops the selection
+  /// if there is one, or on nothing shows the crosshair there.
+  void _touchTap(Offset position, Size size) {
+    if (aiming) {
+      _place(activeTool!, _cursorFor(size), size);
+      return;
+    }
+    if (_crosshairPinned) {
+      _crosshairPinned = false;
+      setCrosshairPosition(null);
+      return;
+    }
+    if (_downOrigin != EventOrigin.chart && _downOrigin != EventOrigin.pane) return;
+    final tool = activeTool;
+    if (tool != null) {
+      if (_downOrigin == EventOrigin.chart) _place(tool, position, size);
+      return;
+    }
+    if (_downOrigin == EventOrigin.chart) {
+      final hit = _drawingAt(position, size);
+      if (hit != null) {
+        if (!hit.selected) onDrawingSelected?.call(hit.id);
+        return;
+      }
+      if (selectedDrawing != null) {
+        onDrawingSelected?.call(null);
+        return;
+      }
+    }
+    _crosshairPinned = true;
+    setCrosshairPosition(position);
+  }
+
+  /// Carries the pinned crosshair by [delta], kept within the plot.
+  void _moveCrosshairBy(Offset delta, Size size) {
+    final current = crosshairPosition;
+    if (current == null) return;
+    setCrosshairPosition(_within(current + delta, layoutFor(size).plotRect));
+  }
+
+  /// Carries the cursor by [delta], kept within the price pane.
+  void _moveCursorBy(Offset delta, Size size) {
+    _cursor = _within(_cursorFor(size) + delta, layoutFor(size).priceRect);
+    notifyListeners();
+  }
+
+  static Offset _within(Offset point, Rect rect) =>
+      Offset(point.dx.clamp(rect.left, rect.right), point.dy.clamp(rect.top, rect.bottom));
 
   /// Moves the grabbed anchor to the pointer, or the whole drawing by how
   /// far the pointer has come since it went down.
@@ -202,9 +321,10 @@ class ChartController extends ChangeNotifier {
   }
 
   /// Where the crosshair is drawn: on the pointer, or with a tool in hand
-  /// on the point the next placement would take, so the magnet's pull shows.
+  /// on the point the next placement would take — the cursor's on a phone
+  /// — so the magnet's pull shows.
   Offset? crosshairFor(Size size) {
-    final pointer = crosshairPosition;
+    final pointer = _aimFor(size);
     if (pointer == null || activeTool == null) return pointer;
     final raw = _getEventPosition(pointer, size);
     final snapped = _snapped(raw, size);
@@ -312,13 +432,19 @@ class ChartController extends ChangeNotifier {
     _indicators = indicators;
     _colors = colors;
 
+    // Only what shapes the time window resets it; a scale or margin change
+    // refits the prices under the same view.
     var timeAxisReset = false;
-    if (interval != _interval || viewConfig != _viewConfig) {
-      _interval = interval;
-      _viewConfig = viewConfig;
+    var priceAxisReset = false;
+    if (interval != _interval || !viewConfig.sameTimeWindow(_viewConfig)) {
       _timeAxisEngine.reset(interval: interval, viewConfig: viewConfig);
       timeAxisReset = true;
+    } else if (viewConfig != _viewConfig) {
+      _priceAxisEngine.anchored = true;
+      priceAxisReset = true;
     }
+    _interval = interval;
+    _viewConfig = viewConfig;
 
     var resetKeyChanged = false;
     if (viewResetKey != _viewResetKey) {
@@ -336,7 +462,7 @@ class ChartController extends ChangeNotifier {
     }
     if (candlesChanged) _requestHistoryIfNeeded();
 
-    if (timeAxisReset || resetKeyChanged || candlesChanged) {
+    if (timeAxisReset || priceAxisReset || resetKeyChanged || candlesChanged) {
       final beforePrice = priceAxis;
       _refitPriceAxis();
       if (timeAxisReset || priceAxis != beforePrice || indicatorsChanged) {
@@ -405,20 +531,73 @@ class ChartController extends ChangeNotifier {
     required void Function(Coordinates pos, PriceAxis priceAxis, TimeAxis timeAxis, bool isMobile) onPointerDownInChart,
     required VoidCallback onPointerDownOutsideChart,
   }) {
+    if (_pointer != null && event.pointer != _pointer) {
+      // A second finger: a pinch, neither a tap nor a swipe of the crosshair.
+      _downPosition = null;
+      _movingCrosshair = false;
+      return;
+    }
     final layout = layoutFor(size);
-    _eventOrigin = _getEventOrigin(event.localPosition, size, layout);
-    _draggedHandle = _eventOrigin == EventOrigin.handle ? layout.handleAt(event.localPosition) : null;
+    final position = event.localPosition;
+    _pointer = event.pointer;
+    _eventOrigin = _getEventOrigin(position, size, layout);
+    _draggedHandle = _eventOrigin == EventOrigin.handle ? layout.handleAt(position) : null;
+    _touch = event.kind == PointerDeviceKind.touch;
+    _downPosition = position;
+    _downOrigin = _eventOrigin;
+    _dragged = false;
+    if (_touch && aiming) {
+      // Wherever it lands: a swipe carries the cursor, a tap places.
+      _movingCursor = true;
+      _eventOrigin = EventOrigin.other;
+      return;
+    }
+    if (_touch && _crosshairPinned) {
+      // Wherever it lands: a swipe carries the crosshair, a tap hides it.
+      _movingCrosshair = true;
+      _eventOrigin = EventOrigin.other;
+      return;
+    }
     if (_eventOrigin == EventOrigin.chart) {
-      if (_drawingPointerDown(event.localPosition, size)) {
+      // A touch grabs only the selected drawing; selecting, placing and
+      // the crosshair wait for the lift, so a swipe pans whatever it
+      // started on.
+      final taken = _touch
+          ? activeTool == null && _grabSelectedDrawing(position, size)
+          : _drawingPointerDown(position, size);
+      if (taken) {
         _eventOrigin = EventOrigin.other;
         return;
       }
-      final pos = _getEventPosition(event.localPosition, size);
-      onPointerDownInChart(pos, priceAxis, timeAxis, isMobile);
+      if (activeTool == null) onPointerDownInChart(_getEventPosition(position, size), priceAxis, timeAxis, isMobile);
     } else {
       onPointerDownOutsideChart();
     }
     setCrosshairPosition(null);
+  }
+
+  /// The pointer lifted: whatever it held is let go; a mouse leaves the
+  /// crosshair where it lifted, a touch that never moved is a tap.
+  void onPointerUp(PointerUpEvent event, Size size) {
+    if (event.pointer != _pointer) return;
+    final tapped = _downPosition != null && !_dragged;
+    _release();
+    if (!_touch) {
+      setCrosshairPosition(event.localPosition);
+      return;
+    }
+    if (tapped) _touchTap(event.localPosition, size);
+  }
+
+  /// The pointer was taken away — by the system, or a parent gesture.
+  void onPointerCancel() => _release();
+
+  void _release() {
+    _pointer = null;
+    _downPosition = null;
+    _dragging = null;
+    _movingCrosshair = false;
+    _movingCursor = false;
   }
 
   void onPointerMove(
@@ -426,6 +605,16 @@ class ChartController extends ChangeNotifier {
     Size size, {
     required bool Function(Coordinates delta, Coordinates coord, PriceAxis priceAxis) onDragUpdate,
   }) {
+    final down = _downPosition;
+    if (down != null && (event.localPosition - down).distance > kTouchSlop) _dragged = true;
+    if (_movingCursor) {
+      _moveCursorBy(event.delta, size);
+      return;
+    }
+    if (_movingCrosshair) {
+      _moveCrosshairBy(event.delta, size);
+      return;
+    }
     if (_eventOrigin == EventOrigin.handle) {
       _dragHandle(event.delta.dy, size);
       return;
@@ -556,7 +745,12 @@ class ChartController extends ChangeNotifier {
   /// No-op while the price axis isn't anchored (the user manually
   /// pan/zoomed it) — matches [PriceAxisEngine.recompute]'s own guard.
   void _refitPriceAxis() {
-    _priceAxisEngine.recompute(candles: _candles, timeAxis: timeAxis, priceMargin: _viewConfig.priceMargin);
+    _priceAxisEngine.recompute(
+      candles: _candles,
+      timeAxis: timeAxis,
+      priceMargin: _viewConfig.priceMargin,
+      logScale: _viewConfig.logScale,
+    );
     _refitPaneAxes();
   }
 

@@ -22,15 +22,15 @@ List<ChartCandle> _candles() => [
 
 ChartController _controller({List<ChartDrawing> drawings = const [], ChartDrawingTool? tool, bool magnet = false}) =>
     ChartController(
-      interval: const Duration(minutes: 1),
-      viewConfig: const ChartViewConfig(),
-      candles: _candles(),
-      viewResetKey: 'BTC',
-      formatPrice: (price) => price.toStringAsFixed(1),
-      labelStyle: const ChartLabelStyle(),
-      indicators: const [],
-      colors: const ChartColors(),
-    )
+        interval: const Duration(minutes: 1),
+        viewConfig: const ChartViewConfig(),
+        candles: _candles(),
+        viewResetKey: 'BTC',
+        formatPrice: (price) => price.toStringAsFixed(1),
+        labelStyle: const ChartLabelStyle(),
+        indicators: const [],
+        colors: const ChartColors(),
+      )
       ..drawings = drawings
       ..activeTool = tool
       ..magnet = magnet;
@@ -57,6 +57,14 @@ void main() {
       expect(hitTestDrawing(line, const Offset(30, 45), projection, handles: false), isNull);
     });
 
+    test('a finger may miss a stroke by more than a mouse', () {
+      expect(hitTestDrawing(line, const Offset(30, 42), projection, handles: false), isNull);
+      expect(
+        hitTestDrawing(line, const Offset(30, 42), projection, handles: false, tolerance: DrawingHitTolerance.touch),
+        isNotNull,
+      );
+    });
+
     test('an anchor is reported when handles are live', () {
       expect(hitTestDrawing(line, const Offset(52, 48), projection, handles: true)?.anchor, 1);
       expect(hitTestDrawing(line, const Offset(52, 48), projection, handles: false)?.anchor, isNull);
@@ -68,19 +76,29 @@ void main() {
       expect(hitTestDrawing(line, const Offset(80, 80), projection, handles: false), isNull);
     });
 
-    test('a rectangle is hit inside, a hidden one never', () {
+    test('a rectangle is hit on its edges, not inside, and a hidden one never', () {
+      // Its corners are (10, 10) and (50, 50) on screen.
       const box = ChartRectangle(id: 'b', points: points, color: Colors.blue);
-      expect(hitTestDrawing(box, const Offset(30, 20), projection, handles: false), isNotNull);
-      expect(hitTestDrawing(box.copyWith(hidden: true), const Offset(30, 20), projection, handles: false), isNull);
+      expect(hitTestDrawing(box, const Offset(30, 12), projection, handles: false), isNotNull);
+      expect(hitTestDrawing(box, const Offset(30, 30), projection, handles: false), isNull);
+      expect(hitTestDrawing(box.copyWith(hidden: true), const Offset(30, 12), projection, handles: false), isNull);
     });
 
     test('a horizontal line spans the pane at its price', () {
-      const h = ChartHorizontalLine(id: 'h', points: [Coordinates(timestamp: 10, price: 40)], color: Colors.blue);
+      const h = ChartHorizontalLine(
+        id: 'h',
+        points: [Coordinates(timestamp: 10, price: 40)],
+        color: Colors.blue,
+      );
       expect(drawingSegments(h, projection).single, (const Offset(0, 60), const Offset(100, 60)));
     });
 
     test('fibonacci levels sit between the two prices', () {
-      const fib = ChartFibRetracement(id: 'f', points: points, color: Colors.blue);
+      const fib = ChartFibRetracement(
+        id: 'f',
+        points: points,
+        color: Colors.blue,
+      );
       final segments = drawingSegments(fib, projection);
       expect(segments, hasLength(fibLevels.length));
       expect(segments.first.$1.dy, 10);
@@ -169,7 +187,9 @@ void main() {
       test('with a tool in hand the crosshair sits where the point would land', () {
         final near = Offset(projection.xForTime(candle.timestamp + 10000), projection.yForPrice(110) + 5);
         final armed = _controller(tool: ChartDrawingTool.horizontalLine, magnet: true)..crosshairPosition = near;
-        final landing = projection.offsetOf(Coordinates(timestamp: candle.timestamp, price: 110));
+        // Its own projection: the time axis is built on now, and a few
+        // milliseconds between two controllers shift it.
+        final landing = armed.projectionFor(_size).offsetOf(Coordinates(timestamp: candle.timestamp, price: 110));
         expect(armed.crosshairFor(_size)!.dx, closeTo(landing.dx, 0.01));
         expect(armed.crosshairFor(_size)!.dy, closeTo(landing.dy, 0.01));
         final idle = _controller(magnet: true)..crosshairPosition = near;
@@ -187,12 +207,15 @@ void main() {
       });
     });
 
-    test('tapping a drawing selects it, tapping nothing deselects, dragging moves it', () {
+    test('a click selects a drawing and moves nothing; the next drag moves it; a click on nothing deselects', () {
       final ids = <Object?>[];
       ChartDrawing? changed;
       final line = ChartTrendLine(
         id: 'a',
-        points: [Coordinates(timestamp: _start + 5 * 60000, price: 95), Coordinates(timestamp: _start + 30 * 60000, price: 105)],
+        points: [
+          Coordinates(timestamp: _start + 5 * 60000, price: 95),
+          Coordinates(timestamp: _start + 30 * 60000, price: 105),
+        ],
         color: Colors.blue,
       );
       final controller = _controller(drawings: [line])
@@ -210,6 +233,27 @@ void main() {
       );
       expect(ids, ['a']);
 
+      final before = controller.timeAxis;
+      controller.onPointerMove(
+        PointerMoveEvent(position: middle + const Offset(0, 20), delta: const Offset(0, 20)),
+        _size,
+        onDragUpdate: (_, _, _) => fail('the click took the drag'),
+      );
+      expect(changed, isNull);
+      expect(controller.timeAxis, before);
+      controller.onPointerUp(
+        PointerUpEvent(position: middle + const Offset(0, 20)),
+        _size,
+      );
+
+      controller.drawings = [line.copyWith(selected: true)];
+      controller.onPointerDown(
+        PointerDownEvent(position: middle, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the drawing takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
       controller.onPointerMove(
         PointerMoveEvent(position: middle + const Offset(0, 20), delta: const Offset(0, 20)),
         _size,
@@ -218,9 +262,11 @@ void main() {
       expect(changed, isNotNull);
       expect(changed!.points[0].price, lessThan(95));
       expect(changed!.points[0].timestamp, line.points[0].timestamp);
-      controller.endDrawingDrag();
+      controller.onPointerUp(
+        PointerUpEvent(position: middle + const Offset(0, 20)),
+        _size,
+      );
 
-      controller.drawings = [line.copyWith(selected: true)];
       var hostTapped = false;
       controller.onPointerDown(
         PointerDownEvent(position: projection.rect.topLeft + const Offset(20, 20), kind: PointerDeviceKind.mouse),
@@ -231,6 +277,235 @@ void main() {
       );
       expect(ids, ['a', null]);
       expect(hostTapped, isTrue);
+    });
+
+    group('touch', () {
+      final line = ChartTrendLine(
+        id: 'a',
+        points: [
+          Coordinates(timestamp: _start + 5 * 60000, price: 95),
+          Coordinates(timestamp: _start + 30 * 60000, price: 105),
+        ],
+        color: Colors.blue,
+      );
+
+      void down(ChartController controller, Offset at, {void Function()? onHost}) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.touch),
+        _size,
+        true,
+        onPointerDownInChart: (_, _, _, _) => onHost?.call(),
+        onPointerDownOutsideChart: () {},
+      );
+
+      void move(ChartController controller, Offset from, Offset by) => controller.onPointerMove(
+        PointerMoveEvent(position: from + by, delta: by, kind: PointerDeviceKind.touch),
+        _size,
+        onDragUpdate: (_, _, _) => false,
+      );
+
+      void up(ChartController controller, Offset at) => controller.onPointerUp(
+        PointerUpEvent(position: at, kind: PointerDeviceKind.touch),
+        _size,
+      );
+
+      void tap(ChartController controller, Offset at) {
+        down(controller, at);
+        up(controller, at);
+      }
+
+      test('a tap on nothing shows the crosshair; a swipe from elsewhere moves it by as much; a tap hides it', () {
+        final controller = _controller();
+        final rect = controller.layoutFor(_size).priceRect;
+        final at = rect.center;
+        final elsewhere = rect.bottomRight - const Offset(30, 30);
+        final before = controller.timeAxis;
+
+        tap(controller, at);
+        expect(controller.crosshairPosition, at);
+
+        down(controller, elsewhere);
+        move(controller, elsewhere, const Offset(60, 10));
+        expect(controller.crosshairPosition, at + const Offset(60, 10));
+        expect(controller.timeAxis, before);
+        up(controller, elsewhere + const Offset(60, 10));
+        expect(controller.crosshairPosition, at + const Offset(60, 10));
+
+        // A swipe from the axis carries it too, and it never leaves the plot.
+        final axis = Offset(_size.width - 5, rect.center.dy);
+        down(controller, axis);
+        move(controller, axis, const Offset(-900, 0));
+        up(controller, axis + const Offset(-900, 0));
+        expect(controller.crosshairPosition, Offset(rect.left, at.dy + 10));
+
+        tap(controller, axis);
+        expect(controller.crosshairPosition, isNull);
+        down(controller, at);
+        move(controller, at, const Offset(60, 0));
+        expect(controller.timeAxis, isNot(before));
+      });
+
+      test('with the crosshair up a tap on a drawing only hides it', () {
+        final ids = <Object?>[];
+        final controller = _controller(drawings: [line])..onDrawingSelected = ids.add;
+        final projection = controller.projectionFor(_size);
+        final middle = Offset.lerp(projection.offsetOf(line.points[0]), projection.offsetOf(line.points[1]), 0.5)!;
+        tap(controller, controller.layoutFor(_size).priceRect.topLeft + const Offset(20, 20));
+        expect(controller.crosshairPosition, isNotNull);
+        tap(controller, middle);
+        expect(controller.crosshairPosition, isNull);
+        expect(ids, isEmpty);
+        tap(controller, middle);
+        expect(ids, ['a']);
+      });
+
+      test('a swipe starting on an unselected drawing pans; a tap selects it, then a swipe moves it', () {
+        final ids = <Object?>[];
+        ChartDrawing? changed;
+        final controller = _controller(drawings: [line])
+          ..onDrawingSelected = ids.add
+          ..onDrawingChanged = (d) => changed = d;
+        Offset middle() {
+          final projection = controller.projectionFor(_size);
+          return Offset.lerp(projection.offsetOf(line.points[0]), projection.offsetOf(line.points[1]), 0.5)!;
+        }
+
+        final before = controller.timeAxis;
+        down(controller, middle());
+        move(controller, middle(), const Offset(40, 0));
+        up(controller, middle() + const Offset(40, 0));
+        expect(ids, isEmpty);
+        expect(changed, isNull);
+        expect(controller.timeAxis, isNot(before));
+
+        tap(controller, middle());
+        expect(ids, ['a']);
+        expect(controller.crosshairPosition, isNull);
+
+        controller.drawings = [line.copyWith(selected: true)];
+        final moved = controller.timeAxis;
+        down(controller, middle());
+        move(controller, middle(), const Offset(0, 20));
+        expect(changed, isNotNull);
+        expect(changed!.points[0].price, lessThan(95));
+        expect(controller.timeAxis, moved);
+        up(controller, middle() + const Offset(0, 20));
+
+        // A tap on nothing with a selection only drops it; the next one
+        // shows the crosshair.
+        final empty = controller.layoutFor(_size).priceRect.topLeft + const Offset(20, 20);
+        tap(controller, empty);
+        expect(ids, ['a', null]);
+        expect(controller.crosshairPosition, isNull);
+        controller.drawings = [line];
+        tap(controller, empty);
+        expect(controller.crosshairPosition, empty);
+      });
+
+      test('with a tool in hand a tap places, a swipe pans', () {
+        ChartDrawing? created;
+        final controller = _controller(tool: ChartDrawingTool.horizontalLine)..onDrawingCreated = (d) => created = d;
+        final rect = controller.layoutFor(_size).priceRect;
+        final before = controller.timeAxis;
+
+        var hostTold = false;
+        down(controller, rect.center, onHost: () => hostTold = true);
+        move(controller, rect.center, const Offset(40, 0));
+        up(controller, rect.center + const Offset(40, 0));
+        expect(created, isNull);
+        expect(hostTold, isFalse);
+        expect(controller.timeAxis, isNot(before));
+
+        tap(controller, rect.center);
+        expect(created, isA<ChartHorizontalLine>());
+      });
+    });
+
+    group('cursor', () {
+      ChartController aiming(ChartDrawingTool tool, {bool pinned = false}) {
+        final controller = _controller(tool: pinned ? null : tool)..cursorPlacement = true;
+        if (pinned) {
+          controller.onPointerDown(
+            const PointerDownEvent(position: Offset(300, 200), kind: PointerDeviceKind.touch),
+            _size,
+            true,
+            onPointerDownInChart: (_, _, _, _) {},
+            onPointerDownOutsideChart: () {},
+          );
+          controller.onPointerUp(
+            const PointerUpEvent(position: Offset(300, 200), kind: PointerDeviceKind.touch),
+            _size,
+          );
+          expect(controller.crosshairPosition, isNotNull);
+          controller
+            ..activeTool = tool
+            ..toolChanged();
+        }
+        return controller;
+      }
+
+      void down(ChartController controller, Offset at) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.touch),
+        _size,
+        true,
+        onPointerDownInChart: (_, _, _, _) => fail('the cursor takes the touch'),
+        onPointerDownOutsideChart: () {},
+      );
+
+      void move(ChartController controller, Offset from, Offset by) => controller.onPointerMove(
+        PointerMoveEvent(position: from + by, delta: by, kind: PointerDeviceKind.touch),
+        _size,
+        onDragUpdate: (_, _, _) => false,
+      );
+
+      void up(ChartController controller, Offset at) => controller.onPointerUp(
+        PointerUpEvent(position: at, kind: PointerDeviceKind.touch),
+        _size,
+      );
+
+      test('a tool puts the crosshair away and aims from the middle; swipes move the aim, taps place', () {
+        ChartDrawing? created;
+        final controller = aiming(ChartDrawingTool.trendLine, pinned: true)..onDrawingCreated = (d) => created = d;
+        final rect = controller.layoutFor(_size).priceRect;
+        expect(controller.crosshairPosition, isNull);
+        expect(controller.crosshairFor(_size), rect.center);
+
+        final before = controller.timeAxis;
+        down(controller, rect.bottomLeft + const Offset(10, -10));
+        move(controller, rect.bottomLeft + const Offset(10, -10), const Offset(-40, 30));
+        up(controller, rect.bottomLeft + const Offset(-30, 20));
+        expect(controller.crosshairFor(_size), rect.center + const Offset(-40, 30));
+        expect(controller.timeAxis, before);
+
+        down(controller, const Offset(50, 50));
+        up(controller, const Offset(50, 50));
+        expect(created, isNull);
+        final first = controller.placingFor(_size)!.points.first;
+        expect(controller.projectionFor(_size).offsetOf(first).dx, closeTo(rect.center.dx - 40, 0.01));
+        expect(controller.projectionFor(_size).offsetOf(first).dy, closeTo(rect.center.dy + 30, 0.01));
+        expect(controller.crosshairFor(_size), rect.center + const Offset(-40, 30));
+
+        down(controller, const Offset(50, 50));
+        move(controller, const Offset(50, 50), const Offset(80, 0));
+        up(controller, const Offset(130, 50));
+        expect(controller.placingFor(_size)!.points.last.timestamp, greaterThan(first.timestamp));
+        down(controller, const Offset(50, 50));
+        up(controller, const Offset(50, 50));
+        expect(created, isA<ChartTrendLine>());
+        expect(created!.points.first, first);
+      });
+
+      test('the aim never leaves the price pane and starts over with the next tool', () {
+        final controller = aiming(ChartDrawingTool.horizontalLine);
+        final rect = controller.layoutFor(_size).priceRect;
+        down(controller, rect.center);
+        move(controller, rect.center, const Offset(-2000, 2000));
+        up(controller, rect.center + const Offset(-2000, 2000));
+        expect(controller.crosshairFor(_size), rect.bottomLeft);
+        controller
+          ..activeTool = ChartDrawingTool.ray
+          ..toolChanged();
+        expect(controller.crosshairFor(_size), rect.center);
+      });
     });
 
     test('a locked drawing is selected but never moved', () {
