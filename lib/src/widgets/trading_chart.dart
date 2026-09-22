@@ -237,7 +237,15 @@ class _TradingChartState extends State<TradingChart> {
     )..addListener(_handleControllerChanged);
     _syncDrawingInputs();
     widget.controller?._attach(_controller.jumpToLive);
+    HardwareKeyboard.instance.addHandler(_syncAxisLock);
     _reportPriceAxisIfChanged();
+  }
+
+  /// Shift locks the point being aimed to the previous one's axis; read
+  /// off the keyboard itself, so it works before the chart has focus.
+  bool _syncAxisLock(KeyEvent event) {
+    _controller.axisLock = HardwareKeyboard.instance.isShiftPressed;
+    return false;
   }
 
   @override
@@ -268,6 +276,7 @@ class _TradingChartState extends State<TradingChart> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_syncAxisLock);
     widget.controller?._detach();
     _controller.dispose();
     _focus.dispose();

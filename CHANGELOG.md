@@ -1,3 +1,8 @@
+## 0.5.1
+
+* Shift held while a point is aimed after another — the tool's next point, or a dragged anchor — locks it to that point's time or price, whichever is nearer on screen (`ChartController.axisLock`, read off the keyboard by the widget). The lock beats the magnet.
+* The formatter's page width is 120, as the code was already laid out.
+
 ## 0.5.0
 
 * The log scale is gone: `ChartViewConfig.logScale` and `ChartTransform.logScale` are removed, the price axis is linear only.

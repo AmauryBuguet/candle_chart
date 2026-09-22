@@ -10,6 +10,7 @@ linter:
     prefer_const_declarations: true
 
 formatter:
+   page_width: 120
    trailing_commas: preserve
 analyzer:
    exclude:

@@ -14,6 +14,7 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   line and ray, vertical line, rectangle, parallel channel, Fibonacci
   retracement and extension, text and measure, anchored in time and price. The chart
   hit-tests, selects and drags them, snaps anchors to OHLC with the magnet,
+  locks a point to the previous one's time or price while Shift is held,
   places new ones with `activeTool`, and reports every change back through
   callbacks; `toJson`/`fromJson` carry them wherever the host keeps them.
 - Candles or a line through the closes (`ChartStyle.chartType`).

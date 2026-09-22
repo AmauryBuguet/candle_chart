@@ -120,6 +120,17 @@ class ChartController extends ChangeNotifier {
   List<ChartDrawing> drawings = const [];
   ChartDrawingTool? activeTool;
   bool magnet = true;
+
+  /// Shift held: a point aimed after another — the tool's next, a dragged
+  /// anchor — keeps that other point's time or price, whichever is nearer.
+  bool get axisLock => _axisLock;
+  bool _axisLock = false;
+  set axisLock(bool value) {
+    if (value == _axisLock) return;
+    _axisLock = value;
+    notifyListeners();
+  }
+
   void Function(ChartDrawing drawing)? onDrawingCreated;
   void Function(ChartDrawing drawing)? onDrawingChanged;
   void Function(Object? id)? onDrawingSelected;
@@ -141,7 +152,7 @@ class ChartController extends ChangeNotifier {
     final tool = activeTool;
     if (tool == null || _placed.isEmpty) return null;
     final pointer = _aimFor(size);
-    final next = pointer == null ? _placed.last : _snapped(_getEventPosition(pointer, size), size);
+    final next = pointer == null ? _placed.last : _aimed(_getEventPosition(pointer, size), size, from: _placed.last);
     final points = [..._placed, for (var i = _placed.length; i < tool.pointCount; i++) next];
     return tool.create(id: '_placing', points: points, color: _colors.drawing);
   }
@@ -250,7 +261,7 @@ class ChartController extends ChangeNotifier {
   /// Places the tool's next point at [position]; the last one creates the
   /// drawing.
   void _place(ChartDrawingTool tool, Offset position, Size size) {
-    _placed = [..._placed, _snapped(_getEventPosition(position, size), size)];
+    _placed = [..._placed, _aimed(_getEventPosition(position, size), size, from: _placed.lastOrNull)];
     if (_placed.length == tool.pointCount) {
       onDrawingCreated?.call(
         tool.create(id: 'drawing-${DateTime.now().microsecondsSinceEpoch}', points: _placed, color: _colors.drawing),
@@ -340,7 +351,11 @@ class ChartController extends ChangeNotifier {
     final now = projection.coordinatesOf(position);
     final List<Coordinates> points;
     if (drag.anchor != null) {
-      points = movedAnchor(drag.original, drag.anchor!, _snapped(now, size));
+      points = movedAnchor(
+        drag.original,
+        drag.anchor!,
+        _aimed(now, size, from: _neighbourOf(drag.original, drag.anchor!)),
+      );
     } else {
       final dt = _onInterval(now.timestamp - drag.from.timestamp);
       final dp = now.price - drag.from.price;
@@ -359,8 +374,29 @@ class ChartController extends ChangeNotifier {
     final pointer = _aimFor(size);
     if (pointer == null || activeTool == null) return pointer;
     final raw = _getEventPosition(pointer, size);
-    final snapped = _snapped(raw, size);
-    return snapped == raw ? pointer : projectionFor(size).offsetOf(snapped);
+    final aimed = _aimed(raw, size, from: _placed.lastOrNull);
+    return aimed == raw ? pointer : projectionFor(size).offsetOf(aimed);
+  }
+
+  /// The point a dragged anchor is locked against: the one before it, the
+  /// second for the first; none for a rectangle's derived corners.
+  static Coordinates? _neighbourOf(ChartDrawing drawing, int anchor) {
+    final points = drawing.points;
+    if (anchor >= points.length || points.length < 2) return null;
+    return points[anchor == 0 ? 1 : anchor - 1];
+  }
+
+  /// Where a point aimed at [c] lands: locked to [from]'s time or price —
+  /// whichever is nearer on screen — while [axisLock] holds and there is a
+  /// [from], then on the grid and to the magnet. A price lock beats the
+  /// magnet, which would pull the point off the line.
+  Coordinates _aimed(Coordinates c, Size size, {required Coordinates? from}) {
+    if (!axisLock || from == null) return _snapped(c, size);
+    final projection = projectionFor(size);
+    final dx = (projection.xForTime(c.timestamp) - projection.xForTime(from.timestamp)).abs();
+    final dy = (projection.yForPrice(c.price) - projection.yForPrice(from.price)).abs();
+    if (dx < dy) return _snapped(Coordinates(timestamp: from.timestamp, price: c.price), size);
+    return Coordinates(timestamp: _onInterval(c.timestamp), price: from.price);
   }
 
   /// How far in pixels the magnet reaches, in price only.

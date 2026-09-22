@@ -273,6 +273,30 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('Shift held on the second click levels the line with the first point', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: _PlacingHost(onSelected: (_) {})),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(const Offset(300, 300));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tapAt(const Offset(600, 340));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    final points = tester.widget<TradingChart>(find.byType(TradingChart)).drawings.single.points;
+    expect(points[1].price, points[0].price);
+    expect(points[1].timestamp, greaterThan(points[0].timestamp));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a host that keeps the new drawing selected and drops the tool at once is left alone', (tester) async {
     final selected = <Object?>[];
     tester.view.physicalSize = const Size(1400, 1000);

@@ -331,6 +331,111 @@ void main() {
       });
     });
 
+    group('axis lock', () {
+      void click(ChartController controller, Offset at) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the tool takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+
+      final candle = _candles()[10];
+      final first = Coordinates(timestamp: candle.timestamp, price: 100);
+
+      test('the second point takes the first\'s price or time, whichever is nearer on screen', () {
+        for (final (by, level) in [(const Offset(120, 30), true), (const Offset(30, 120), false)]) {
+          ChartDrawing? created;
+          final controller = _controller(tool: ChartDrawingTool.trendLine)
+            ..axisLock = true
+            ..onDrawingCreated = (d) => created = d;
+          final projection = controller.projectionFor(_size);
+          final at = projection.offsetOf(first);
+          click(controller, at);
+          click(controller, at + by);
+          final second = created!.points[1];
+          if (level) {
+            expect(second.price, first.price);
+            expect(second.timestamp, greaterThan(first.timestamp));
+          } else {
+            expect(second.timestamp, first.timestamp);
+            expect(second.price, lessThan(first.price));
+          }
+        }
+      });
+
+      test('the preview and the crosshair show the lock before the click', () {
+        final controller = _controller(tool: ChartDrawingTool.trendLine)..axisLock = true;
+        final projection = controller.projectionFor(_size);
+        final at = projection.offsetOf(first);
+        click(controller, at);
+        controller.crosshairPosition = at + const Offset(120, 30);
+        expect(controller.placingFor(_size)!.points[1].price, first.price);
+        expect(controller.crosshairFor(_size)!.dy, closeTo(at.dy, 0.01));
+      });
+
+      test('a price lock holds against the magnet', () {
+        ChartDrawing? created;
+        final controller = _controller(tool: ChartDrawingTool.trendLine, magnet: true)
+          ..axisLock = true
+          ..onDrawingCreated = (d) => created = d;
+        final projection = controller.projectionFor(_size);
+        final at = projection.offsetOf(Coordinates(timestamp: candle.timestamp, price: 102));
+        click(controller, at);
+        // The close at 105 is within the magnet's reach; the lock wins.
+        click(controller, Offset(at.dx + 120, projection.yForPrice(104)));
+        expect(created!.points[1].price, 102);
+      });
+
+      test('the first point is free, as is a point with the lock off', () {
+        for (final lock in [true, false]) {
+          ChartDrawing? created;
+          final controller = _controller(tool: ChartDrawingTool.trendLine)
+            ..axisLock = lock
+            ..onDrawingCreated = (d) => created = d;
+          final projection = controller.projectionFor(_size);
+          final at = projection.offsetOf(first);
+          click(controller, at + const Offset(0, 10));
+          click(controller, at + const Offset(120, 30));
+          expect(created!.points[0].price, isNot(first.price));
+          expect(created!.points[1].price, lock ? created!.points[0].price : isNot(created!.points[0].price));
+        }
+      });
+
+      test('a dragged anchor locks to the point beside it', () {
+        ChartDrawing? changed;
+        final line = ChartTrendLine(
+          id: 'a',
+          points: [
+            first,
+            Coordinates(timestamp: _start + 30 * 60000, price: 105),
+          ],
+          color: Colors.blue,
+          selected: true,
+        );
+        final controller = _controller(drawings: [line])
+          ..axisLock = true
+          ..onDrawingChanged = (d) => changed = d;
+        final projection = controller.projectionFor(_size);
+        final end = projection.offsetOf(line.points[1]);
+        controller.onPointerDown(
+          PointerDownEvent(position: end, kind: PointerDeviceKind.mouse),
+          _size,
+          false,
+          onPointerDownInChart: (_, _, _, _) => fail('the anchor takes the click'),
+          onPointerDownOutsideChart: () {},
+        );
+        controller.onPointerMove(
+          PointerMoveEvent(position: end + const Offset(40, 10), delta: const Offset(40, 10)),
+          _size,
+          onDragUpdate: (_, _, _) => fail('the anchor takes the drag'),
+        );
+        expect(changed!.points[1].price, first.price);
+        expect(changed!.points[1].timestamp, greaterThan(line.points[1].timestamp));
+        expect(changed!.points[0], first);
+      });
+    });
+
     test('a placed point lands on the candle grid in time, magnet or not', () {
       ChartDrawing? created;
       final controller = _controller(tool: ChartDrawingTool.verticalLine)..onDrawingCreated = (d) => created = d;
