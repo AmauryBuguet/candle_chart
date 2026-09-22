@@ -1,3 +1,8 @@
+## 0.5.2
+
+* The trend-based Fibonacci extension drops the ratios between 0 and 1: `fibExtensionLevels` is 0, 1, 1.618, 2.618, 3.618, 4.236.
+* The armed crosshair is drawn at 0.8 rather than 1.2, closer to the resting one.
+
 ## 0.5.1
 
 * Shift held while a point is aimed after another — the tool's next point, or a dragged anchor — locks it to that point's time or price, whichever is nearer on screen (`ChartController.axisLock`, read off the keyboard by the widget). The lock beats the magnet.

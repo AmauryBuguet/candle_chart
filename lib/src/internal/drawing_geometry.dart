@@ -14,7 +14,7 @@ double fibPrice(List<Coordinates> points, double level) =>
 
 /// The trend-based Fibonacci extension ratios: 0 sits on the third point's
 /// price, 1 a whole first-to-second move above (or below) it.
-const List<double> fibExtensionLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
+const List<double> fibExtensionLevels = [0, 1, 1.618, 2.618, 3.618, 4.236];
 
 /// The price of a Fibonacci extension [level]: the move from the first
 /// point to the second, scaled by [level], projected from the third.

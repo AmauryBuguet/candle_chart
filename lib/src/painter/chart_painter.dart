@@ -698,7 +698,7 @@ class ChartPainter extends CustomPainter {
     final paint = Paint()
       ..color = crosshairArmed ? style.colors.cursor : style.colors.crosshair
       ..style = PaintingStyle.stroke
-      ..strokeWidth = crosshairArmed ? 1.2 : 0.6;
+      ..strokeWidth = crosshairArmed ? 0.8 : 0.6;
 
     double dx = position.dx;
     if (candle != null) {
