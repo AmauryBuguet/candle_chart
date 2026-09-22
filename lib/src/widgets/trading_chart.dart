@@ -327,6 +327,7 @@ class _TradingChartState extends State<TradingChart> {
       priceAxis: _controller.priceAxis,
       timeAxis: _controller.timeAxis,
       paneSpace: layout.paneSpace,
+      logScale: widget.viewConfig.logScale,
       panes: [
         for (var i = 0; i < layout.paneRects.length; i++)
           ChartPaneTransform(
@@ -428,6 +429,7 @@ class _TradingChartState extends State<TradingChart> {
                         overlays: [for (final o in _controller.overlays) (o, _controller.renderOf(o))],
                         panes: [for (final p in _controller.paneIndicators) (p, _controller.renderOf(p))],
                         paneAxes: _controller.paneAxes,
+                        logScale: widget.viewConfig.logScale,
                         drawings: widget.drawings,
                         placing: _controller.placingFor(c.biggest),
                       ),

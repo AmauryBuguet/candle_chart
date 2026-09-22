@@ -54,6 +54,7 @@ class ChartController extends ChangeNotifier {
       candles: _candles,
       timeAxis: timeAxis,
       priceMargin: _viewConfig.priceMargin,
+      logScale: _viewConfig.logScale,
     );
     _recomputeIndicators();
     _syncPanes();
@@ -188,9 +189,9 @@ class ChartController extends ChangeNotifier {
     return DrawingProjection(
       rect: rect,
       xForTime: (t) => rect.left + (t - timeAxis.start) / timeAxis.range * rect.width,
-      yForPrice: (p) => yForPrice(p, priceAxis, rect),
+      yForPrice: (p) => yForPrice(p, priceAxis, rect, logScale: _viewConfig.logScale),
       timeForX: (x) => timeAxis.start + ((x - rect.left) / rect.width * timeAxis.range).round(),
-      priceForY: (y) => priceForY(y, priceAxis, rect),
+      priceForY: (y) => priceForY(y, priceAxis, rect, logScale: _viewConfig.logScale),
     );
   }
 
@@ -358,9 +359,11 @@ class ChartController extends ChangeNotifier {
       );
     } else {
       final dt = _onInterval(now.timestamp - drag.from.timestamp);
+      final ratio = _viewConfig.logScale && drag.from.price > 0 ? now.price / drag.from.price : null;
       final dp = now.price - drag.from.price;
       points = [
-        for (final p in drag.original.points) Coordinates(timestamp: p.timestamp + dt, price: p.price + dp),
+        for (final p in drag.original.points)
+          Coordinates(timestamp: p.timestamp + dt, price: ratio != null ? p.price * ratio : p.price + dp),
       ];
     }
     onDrawingChanged?.call(drag.original.copyWith(points: points));
@@ -711,7 +714,7 @@ class ChartController extends ChangeNotifier {
         if (_lastHorizontalScale == null) {
           _timeAxisEngine.pan(delta.timestamp);
           if (_eventOrigin == EventOrigin.chart) {
-            _priceAxisEngine.panBy(event.delta.dy, height);
+            _priceAxisEngine.panBy(event.delta.dy, height, logScale: _viewConfig.logScale);
           }
           // Panning changes which candles are visible, so an anchored price
           // axis needs to refit to them too — it's not just following the
@@ -720,7 +723,7 @@ class ChartController extends ChangeNotifier {
           _requestHistoryIfNeeded();
         }
       } else if (_eventOrigin == EventOrigin.yScale) {
-        _priceAxisEngine.scaleBy(event.delta.dy, height);
+        _priceAxisEngine.scaleBy(event.delta.dy, height, logScale: _viewConfig.logScale);
       }
       if (timeAxis != beforeTime || priceAxis != beforePrice) {
         margins = _computeMargins();
@@ -829,6 +832,7 @@ class ChartController extends ChangeNotifier {
       candles: _candles,
       timeAxis: timeAxis,
       priceMargin: _viewConfig.priceMargin,
+      logScale: _viewConfig.logScale,
     );
     _refitPaneAxes();
   }
@@ -877,11 +881,13 @@ class ChartController extends ChangeNotifier {
 
   Coordinates _getEventPosition(Offset position, Size size) {
     final rect = layoutFor(size).priceRect;
-    final price = priceForY(position.dy, priceAxis, rect);
+    final price = priceForY(position.dy, priceAxis, rect, logScale: _viewConfig.logScale);
     final int time = timeAxis.start + ((position.dx - rect.left) * timeAxis.range ~/ rect.width);
     return Coordinates(timestamp: time, price: price);
   }
 
+  /// The price delta is what a linear axis would read; under a log scale a
+  /// host dragging its own objects should use the transform's mapping.
   Coordinates _getEventDelta(Offset delta, Size size) {
     final rect = layoutFor(size).priceRect;
     final priceDelta = -1 * delta.dy * priceAxis.range / rect.height;

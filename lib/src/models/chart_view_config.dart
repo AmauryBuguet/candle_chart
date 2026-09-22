@@ -19,12 +19,16 @@ class ChartViewConfig extends Equatable {
   /// as a fraction of their range (e.g. `0.1` = 10%).
   final double priceMargin;
 
+  /// Whether the price axis is logarithmic: equal ratios take equal heights.
+  final bool logScale;
+
   const ChartViewConfig({
     this.startCandles = 100,
     this.minCandles = 4,
     this.maxCandles = 1000,
     this.rightMargin = 0.25,
     this.priceMargin = 0.1,
+    this.logScale = false,
   });
 
   ChartViewConfig copyWith({
@@ -33,16 +37,18 @@ class ChartViewConfig extends Equatable {
     int? maxCandles,
     double? rightMargin,
     double? priceMargin,
+    bool? logScale,
   }) => ChartViewConfig(
     startCandles: startCandles ?? this.startCandles,
     minCandles: minCandles ?? this.minCandles,
     maxCandles: maxCandles ?? this.maxCandles,
     rightMargin: rightMargin ?? this.rightMargin,
     priceMargin: priceMargin ?? this.priceMargin,
+    logScale: logScale ?? this.logScale,
   );
 
   /// Whether [other] asks for the same visible time window: the same
-  /// candle counts and right margin, whatever its price margin.
+  /// candle counts and right margin, whatever its scale and price margin.
   bool sameTimeWindow(ChartViewConfig other) =>
       startCandles == other.startCandles &&
       minCandles == other.minCandles &&
@@ -50,5 +56,5 @@ class ChartViewConfig extends Equatable {
       rightMargin == other.rightMargin;
 
   @override
-  List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin];
+  List<Object> get props => [startCandles, minCandles, maxCandles, rightMargin, priceMargin, logScale];
 }

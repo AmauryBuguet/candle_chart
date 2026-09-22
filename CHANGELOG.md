@@ -1,3 +1,7 @@
+## 0.6.0
+
+* The log scale is back: `ChartViewConfig.logScale` and `ChartTransform.logScale` return, with the axis fit, the ticks at 1, 2 and 5 of each decade, the price-axis pan and zoom by ratio, and a drawing dragged by ratio rather than by amount.
+
 ## 0.5.2
 
 * The trend-based Fibonacci extension drops the ratios between 0 and 1: `fibExtensionLevels` is 0, 1, 1.618, 2.618, 3.618, 4.236.

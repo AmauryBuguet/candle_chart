@@ -17,7 +17,8 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   locks a point to the previous one's time or price while Shift is held,
   places new ones with `activeTool`, and reports every change back through
   callbacks; `toJson`/`fromJson` carry them wherever the host keeps them.
-- Candles or a line through the closes (`ChartStyle.chartType`).
+- Candles or a line through the closes (`ChartStyle.chartType`); a linear or
+  logarithmic price axis (`ChartViewConfig.logScale`).
 - Pan (drag), wheel zoom, pinch zoom, double-tap to reset/anchor the price
   axis, and on desktop the keyboard: arrows pan, plus and minus zoom, Home
   jumps to live, Escape and Delete act on drawings.
