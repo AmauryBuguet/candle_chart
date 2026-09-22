@@ -1,3 +1,8 @@
+## 0.5.0
+
+* The log scale is gone: `ChartViewConfig.logScale` and `ChartTransform.logScale` are removed, the price axis is linear only.
+* The mouse cursor over a drawing: a pointing hand over one a click would select, `resizeUpDown` over a selected horizontal line or ray, `resizeLeftRight` over a selected vertical line, `move` over any other selected drawing or its anchors, kept while it is dragged.
+
 ## 0.4.8
 
 * Trend-based Fibonacci extension (`ChartFibExtension`, `ChartDrawingTool.fibExtension`), on three points: the move from the first to the second, projected from the third at the ratios 0 to 4.236 (`fibExtensionLevels`, `fibExtensionPrice`). The two legs are drawn, the levels run from the third point to the right edge, each labelled with its ratio and price.

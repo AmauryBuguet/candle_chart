@@ -52,7 +52,6 @@ class ChartPainter extends CustomPainter {
     this.overlays = const [],
     this.panes = const [],
     this.paneAxes = const [],
-    this.logScale = false,
     this.drawings = const [],
     this.placing,
   });
@@ -80,9 +79,6 @@ class ChartPainter extends CustomPainter {
 
   /// One value axis per entry of [panes].
   final List<PriceAxis> paneAxes;
-
-  /// Whether the price pane's axis is logarithmic.
-  final bool logScale;
 
   /// The user's drawings, in the price pane.
   final List<ChartDrawing> drawings;
@@ -116,7 +112,7 @@ class ChartPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawRect(Offset.zero & size, backgroundPaint);
 
-    _drawValueAxis(canvas, chartRect, priceAxis, formatPrice, logScale: logScale);
+    _drawValueAxis(canvas, chartRect, priceAxis, formatPrice);
     final dateFormat = _drawTimeAxis(canvas);
 
     for (final (overlay, _) in overlays) {
@@ -663,19 +659,11 @@ class ChartPainter extends CustomPainter {
   /// One pane's value ticks: a grid line across it and a label in the right
   /// gutter, clipped to the pane so a tick at its edge does not stray into
   /// the next.
-  void _drawValueAxis(
-    Canvas canvas,
-    Rect rect,
-    PriceAxis axis,
-    String Function(double) format, {
-    bool logScale = false,
-  }) {
-    final ticks = logScale
-        ? _generateLogPriceTicks(axis.start, axis.end, rect.height)
-        : _generateNicePriceTicks(axis.start, axis.end, rect.height);
+  void _drawValueAxis(Canvas canvas, Rect rect, PriceAxis axis, String Function(double) format) {
+    final ticks = _generateNicePriceTicks(axis.start, axis.end, rect.height);
     final gridPaint = _gridPaint;
     for (final tick in ticks) {
-      final y = scale.yForPrice(tick, axis, rect, logScale: logScale);
+      final y = scale.yForPrice(tick, axis, rect);
       if (style.grid) canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(text: format(tick), style: style.labelStyle.textStyle),
@@ -804,28 +792,6 @@ class ChartPainter extends CustomPainter {
     return ticks;
   }
 
-  /// Ticks at 1, 2 and 5 of each decade the axis spans, thinned to the
-  /// decades alone when they would crowd, and the linear ticks when the
-  /// range is too narrow to hold two of them.
-  List<double> _generateLogPriceTicks(double start, double end, double chartHeight) {
-    if (start <= 0) return _generateNicePriceTicks(start, end, chartHeight);
-    final ticks = <double>[];
-    final lowDecade = (log(start) / ln10).floor();
-    final highDecade = (log(end) / ln10).ceil();
-    for (var k = lowDecade; k <= highDecade; k++) {
-      for (final m in const [1, 2, 5]) {
-        final tick = m * pow(10, k).toDouble();
-        if (tick >= start && tick <= end) ticks.add(_cleanFloat(tick));
-      }
-    }
-    final maxTicks = (chartHeight / style.labelStyle.minSpacingPxPriceAxis).floor().clamp(2, 100);
-    if (ticks.length > maxTicks) {
-      ticks.removeWhere((t) => (log(t) / ln10) % 1 != 0);
-    }
-    if (ticks.length < 2) return _generateNicePriceTicks(start, end, chartHeight);
-    return ticks;
-  }
-
   double _cleanFloat(double value) {
     return double.parse(value.toStringAsFixed(_maxTickCleanupDecimals));
   }
@@ -938,7 +904,7 @@ class ChartPainter extends CustomPainter {
 
   /// Converts a price to Y coordinate.
   double _getYPositionFromPrice(double price, Rect chartRect) {
-    return scale.yForPrice(price, priceAxis, chartRect, logScale: logScale);
+    return scale.yForPrice(price, priceAxis, chartRect);
   }
 
   /// Converts a timestamp to X coordinate.
@@ -952,7 +918,7 @@ class ChartPainter extends CustomPainter {
   }
 
   double _getPriceFromYPosition({required double y, required Rect chartRect, required PriceAxis axis}) {
-    return scale.priceForY(y, axis, chartRect, logScale: logScale && identical(axis, priceAxis));
+    return scale.priceForY(y, axis, chartRect);
   }
 
   @override
@@ -970,7 +936,6 @@ class ChartPainter extends CustomPainter {
         oldDelegate.panes != panes ||
         oldDelegate.paneAxes != paneAxes ||
         oldDelegate.layout != layout ||
-        oldDelegate.logScale != logScale ||
         oldDelegate.drawings != drawings ||
         oldDelegate.placing != placing;
   }

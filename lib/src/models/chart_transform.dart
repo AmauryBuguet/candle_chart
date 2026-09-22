@@ -19,7 +19,6 @@ class ChartTransform extends Equatable {
     required this.timeAxis,
     this.paneSpace = 0,
     this.panes = const [],
-    this.logScale = false,
   });
 
   /// Size of the chart widget, axis gutters included.
@@ -35,11 +34,6 @@ class ChartTransform extends Equatable {
   /// The indicator panes, top to bottom.
   final List<ChartPaneTransform> panes;
 
-  /// Whether the price axis is logarithmic. [yForPrice] and [priceForY]
-  /// account for it; a host doing its own axis maths must not assume a
-  /// linear axis when this is on.
-  final bool logScale;
-
   /// The price pane, i.e. [size] minus the axis gutters and [paneSpace].
   Rect get plotArea => Rect.fromLTRB(
     margins.left,
@@ -48,9 +42,9 @@ class ChartTransform extends Equatable {
     size.height - margins.bottom - paneSpace,
   );
 
-  double yForPrice(double price) => scale.yForPrice(price, priceAxis, plotArea, logScale: logScale);
+  double yForPrice(double price) => scale.yForPrice(price, priceAxis, plotArea);
 
-  double priceForY(double y) => scale.priceForY(y, priceAxis, plotArea, logScale: logScale);
+  double priceForY(double y) => scale.priceForY(y, priceAxis, plotArea);
 
   double xForTime(int timestamp) => plotArea.left + (timestamp - timeAxis.start) / timeAxis.range * plotArea.width;
 
@@ -60,5 +54,5 @@ class ChartTransform extends Equatable {
   bool containsPrice(double price) => price >= priceAxis.start && price <= priceAxis.end;
 
   @override
-  List<Object> get props => [size, margins, priceAxis, timeAxis, paneSpace, panes, logScale];
+  List<Object> get props => [size, margins, priceAxis, timeAxis, paneSpace, panes];
 }

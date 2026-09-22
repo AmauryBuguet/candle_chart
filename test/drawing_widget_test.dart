@@ -47,6 +47,7 @@ Future<void> _pump(
   void Function(Object? id)? onSelected,
   void Function(Object id)? onDeleted,
   VoidCallback? onCancelled,
+  TradingChartController? controller,
 }) async {
   tester.view.physicalSize = const Size(1400, 1000);
   tester.view.devicePixelRatio = 1;
@@ -72,6 +73,7 @@ Future<void> _pump(
           onDrawingSelected: onSelected,
           onDrawingDeleted: onDeleted,
           onDrawingCancelled: onCancelled,
+          controller: controller,
         ),
       ),
     ),
@@ -83,6 +85,39 @@ void main() {
   testWidgets('every kind of drawing paints, the selected one with handles', (tester) async {
     await _pump(tester, drawings: _everyKind());
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the mouse cursor says what a drawing under it would do', (tester) async {
+    final controller = TradingChartController();
+    final a = Coordinates(timestamp: _start + 5 * 60000, price: 100);
+    final b = Coordinates(timestamp: _start + 30 * 60000, price: 130);
+    await _pump(
+      tester,
+      controller: controller,
+      drawings: [
+        ChartHorizontalLine(id: 1, points: [a], color: Colors.blue, selected: true),
+        ChartTrendLine(id: 2, points: [a, b], color: Colors.blue),
+      ],
+    );
+    final transform = controller.transform!;
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    MouseRegion region() => tester.widget<MouseRegion>(
+      find.descendant(of: find.byType(TradingChart), matching: find.byType(MouseRegion)).first,
+    );
+
+    await gesture.moveTo(Offset(transform.xForTime(_start + 15 * 60000), transform.yForPrice(100)));
+    await tester.pump();
+    expect(region().cursor, SystemMouseCursors.resizeUpDown);
+
+    await gesture.moveTo(Offset(transform.xForTime(_start + 20 * 60000), transform.yForPrice(118)));
+    await tester.pump();
+    expect(region().cursor, SystemMouseCursors.click);
+
+    await gesture.moveTo(Offset(transform.xForTime(_start + 20 * 60000), transform.yForPrice(135)));
+    await tester.pump();
+    expect(region().cursor, MouseCursor.defer);
   });
 
   testWidgets('the line chart type paints', (tester) async {

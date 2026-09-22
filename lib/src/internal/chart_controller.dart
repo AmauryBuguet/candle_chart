@@ -54,7 +54,6 @@ class ChartController extends ChangeNotifier {
       candles: _candles,
       timeAxis: timeAxis,
       priceMargin: _viewConfig.priceMargin,
-      logScale: _viewConfig.logScale,
     );
     _recomputeIndicators();
     _syncPanes();
@@ -178,9 +177,9 @@ class ChartController extends ChangeNotifier {
     return DrawingProjection(
       rect: rect,
       xForTime: (t) => rect.left + (t - timeAxis.start) / timeAxis.range * rect.width,
-      yForPrice: (p) => yForPrice(p, priceAxis, rect, logScale: _viewConfig.logScale),
+      yForPrice: (p) => yForPrice(p, priceAxis, rect),
       timeForX: (x) => timeAxis.start + ((x - rect.left) / rect.width * timeAxis.range).round(),
-      priceForY: (y) => priceForY(y, priceAxis, rect, logScale: _viewConfig.logScale),
+      priceForY: (y) => priceForY(y, priceAxis, rect),
     );
   }
 
@@ -205,6 +204,36 @@ class ChartController extends ChangeNotifier {
   }
 
   DrawingHitTolerance get _tolerance => _touch ? DrawingHitTolerance.touch : DrawingHitTolerance.mouse;
+
+  /// The mouse cursor over the chart: how the selected drawing under the
+  /// pointer would move, a hand over one a click would select, the arrow
+  /// elsewhere. Kept while a drawing is being dragged.
+  MouseCursor cursorFor(Size size) {
+    final drag = _dragging;
+    if (drag != null) return _moveCursor(drag.original);
+    final position = crosshairPosition;
+    if (position == null || activeTool != null) return MouseCursor.defer;
+    final selected = selectedDrawing;
+    if (selected != null && !selected.locked) {
+      final hit = hitTestDrawing(
+        selected,
+        position,
+        projectionFor(size),
+        handles: true,
+        tolerance: _tolerance,
+        textSize: _textSize,
+      );
+      if (hit != null) return _moveCursor(selected);
+    }
+    if (_drawingAt(position, size) != null) return SystemMouseCursors.click;
+    return MouseCursor.defer;
+  }
+
+  static MouseCursor _moveCursor(ChartDrawing drawing) => switch (drawing) {
+    ChartHorizontalLine() || ChartHorizontalRay() => SystemMouseCursors.resizeUpDown,
+    ChartVerticalLine() => SystemMouseCursors.resizeLeftRight,
+    _ => SystemMouseCursors.move,
+  };
 
   /// The topmost drawing under [position], by its body.
   ChartDrawing? _drawingAt(Offset position, Size size) {
@@ -314,11 +343,9 @@ class ChartController extends ChangeNotifier {
       points = movedAnchor(drag.original, drag.anchor!, _snapped(now, size));
     } else {
       final dt = _onInterval(now.timestamp - drag.from.timestamp);
-      final ratio = _viewConfig.logScale && drag.from.price > 0 ? now.price / drag.from.price : null;
       final dp = now.price - drag.from.price;
       points = [
-        for (final p in drag.original.points)
-          Coordinates(timestamp: p.timestamp + dt, price: ratio != null ? p.price * ratio : p.price + dp),
+        for (final p in drag.original.points) Coordinates(timestamp: p.timestamp + dt, price: p.price + dp),
       ];
     }
     onDrawingChanged?.call(drag.original.copyWith(points: points));
@@ -648,7 +675,7 @@ class ChartController extends ChangeNotifier {
         if (_lastHorizontalScale == null) {
           _timeAxisEngine.pan(delta.timestamp);
           if (_eventOrigin == EventOrigin.chart) {
-            _priceAxisEngine.panBy(event.delta.dy, height, logScale: _viewConfig.logScale);
+            _priceAxisEngine.panBy(event.delta.dy, height);
           }
           // Panning changes which candles are visible, so an anchored price
           // axis needs to refit to them too — it's not just following the
@@ -657,7 +684,7 @@ class ChartController extends ChangeNotifier {
           _requestHistoryIfNeeded();
         }
       } else if (_eventOrigin == EventOrigin.yScale) {
-        _priceAxisEngine.scaleBy(event.delta.dy, height, logScale: _viewConfig.logScale);
+        _priceAxisEngine.scaleBy(event.delta.dy, height);
       }
       if (timeAxis != beforeTime || priceAxis != beforePrice) {
         margins = _computeMargins();
@@ -766,7 +793,6 @@ class ChartController extends ChangeNotifier {
       candles: _candles,
       timeAxis: timeAxis,
       priceMargin: _viewConfig.priceMargin,
-      logScale: _viewConfig.logScale,
     );
     _refitPaneAxes();
   }
@@ -815,13 +841,11 @@ class ChartController extends ChangeNotifier {
 
   Coordinates _getEventPosition(Offset position, Size size) {
     final rect = layoutFor(size).priceRect;
-    final price = priceForY(position.dy, priceAxis, rect, logScale: _viewConfig.logScale);
+    final price = priceForY(position.dy, priceAxis, rect);
     final int time = timeAxis.start + ((position.dx - rect.left) * timeAxis.range ~/ rect.width);
     return Coordinates(timestamp: time, price: price);
   }
 
-  /// The price delta is what a linear axis would read; under a log scale a
-  /// host dragging its own objects should use the transform's mapping.
   Coordinates _getEventDelta(Offset delta, Size size) {
     final rect = layoutFor(size).priceRect;
     final priceDelta = -1 * delta.dy * priceAxis.range / rect.height;
