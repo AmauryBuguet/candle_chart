@@ -188,7 +188,7 @@ class ChartPainter extends CustomPainter {
     }
 
     final position = crosshairPosition;
-    if (position != null && style.crosshair && layout.plotRect.contains(position)) {
+    if (position != null && (style.crosshair || crosshairArmed) && layout.plotRect.contains(position)) {
       _drawCrosshair(canvas, position, candles.firstOrNull, dateFormat, chartRect);
     }
   }

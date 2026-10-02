@@ -103,6 +103,7 @@ class TradingChart extends StatefulWidget {
     this.drawings = const [],
     this.activeTool,
     this.magnet = true,
+    this.magnetReach = 30,
     this.onDrawingCreated,
     this.onDrawingChanged,
     this.onDrawingSelected,
@@ -177,6 +178,9 @@ class TradingChart extends StatefulWidget {
   /// aligns — when one is within reach in price.
   final bool magnet;
 
+  /// How far in pixels, in price, the [magnet] reaches.
+  final double magnetReach;
+
   final void Function(ChartDrawing drawing)? onDrawingCreated;
 
   /// A drawing moved — an anchor dragged, or the whole thing — as a new
@@ -214,6 +218,8 @@ class _TradingChartState extends State<TradingChart> {
       ..drawings = widget.drawings
       ..activeTool = widget.activeTool
       ..magnet = widget.magnet
+      ..magnetReach = widget.magnetReach
+      ..crosshair = widget.style.crosshair
       ..onDrawingCreated = widget.onDrawingCreated
       ..onDrawingChanged = widget.onDrawingChanged
       ..onDrawingSelected = widget.onDrawingSelected

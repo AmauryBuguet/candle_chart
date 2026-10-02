@@ -121,6 +121,20 @@ class ChartController extends ChangeNotifier {
   List<ChartDrawing> drawings = const [];
   ChartDrawingTool? activeTool;
   bool magnet = true;
+  double magnetReach = 30;
+
+  /// Whether the crosshair is shown at all; off, a finger's tap on nothing
+  /// does nothing and its swipes pan. The cursor still aims a tool.
+  bool get crosshair => _crosshair;
+  bool _crosshair = true;
+  set crosshair(bool value) {
+    if (value == _crosshair) return;
+    _crosshair = value;
+    if (!value && _crosshairPinned) {
+      _crosshairPinned = false;
+      setCrosshairPosition(null);
+    }
+  }
 
   /// Shift held: a point aimed after another — the tool's next, a dragged
   /// anchor — keeps that other point's time or price, whichever is nearer.
@@ -322,6 +336,7 @@ class ChartController extends ChangeNotifier {
         return;
       }
     }
+    if (!crosshair) return;
     _crosshairPinned = true;
     setCrosshairPosition(position);
   }
@@ -401,9 +416,6 @@ class ChartController extends ChangeNotifier {
     if (dx < dy) return _snapped(Coordinates(timestamp: from.timestamp, price: c.price), size);
     return Coordinates(timestamp: _onInterval(c.timestamp), price: from.price);
   }
-
-  /// How far in pixels the magnet reaches, in price only.
-  static const magnetReach = 30.0;
 
   /// A point lands on the candle grid in time, as the crosshair aligns.
   /// With the magnet on, over a candle it also lands on its open, high,

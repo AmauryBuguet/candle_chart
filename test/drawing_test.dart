@@ -278,9 +278,10 @@ void main() {
     });
 
     group('magnet', () {
-      Coordinates place(Offset at) {
+      Coordinates place(Offset at, {double reach = 30}) {
         ChartDrawing? created;
         final controller = _controller(tool: ChartDrawingTool.horizontalLine, magnet: true)
+          ..magnetReach = reach
           ..onDrawingCreated = (d) => created = d;
         controller.onPointerDown(
           PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
@@ -324,10 +325,16 @@ void main() {
 
       test('it reaches a level well away in price, and no further', () {
         final x = projection.xForTime(candle.timestamp);
-        final within = Offset(x, projection.yForPrice(110) - ChartController.magnetReach + 1);
+        final within = Offset(x, projection.yForPrice(110) - 30 + 1);
         expect(place(within), Coordinates(timestamp: candle.timestamp, price: 110));
-        final beyond = Offset(x, projection.yForPrice(110) - ChartController.magnetReach - 1);
+        final beyond = Offset(x, projection.yForPrice(110) - 30 - 1);
         expect(place(beyond).price, isNot(110));
+      });
+
+      test('its reach is the host\'s to set', () {
+        final at = Offset(projection.xForTime(candle.timestamp), projection.yForPrice(110) + 20);
+        expect(place(at), Coordinates(timestamp: candle.timestamp, price: 110));
+        expect(place(at, reach: 10).price, isNot(110));
       });
     });
 

@@ -20,7 +20,11 @@ List<ChartCandle> _candles() {
   ];
 }
 
-Future<void> _pumpChart(WidgetTester tester, {Size size = const Size(1400, 1000)}) async {
+Future<void> _pumpChart(
+  WidgetTester tester, {
+  Size size = const Size(1400, 1000),
+  ChartStyle style = const ChartStyle(),
+}) async {
   // Hover is a desktop affordance, so the surface is one unless said otherwise.
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -34,7 +38,7 @@ Future<void> _pumpChart(WidgetTester tester, {Size size = const Size(1400, 1000)
           lines: const [],
           orderLines: const [],
           positions: const [],
-          style: const ChartStyle(),
+          style: style,
           interval: const Duration(minutes: 1),
           viewConfig: const ChartViewConfig(),
           viewResetKey: 'BTC',
@@ -133,4 +137,18 @@ void main() {
       await tester.pumpAndSettle();
     });
   }
+
+  testWidgets('with the crosshair off a finger\'s tap shows nothing and its swipe pans', (tester) async {
+    await _pumpChart(tester, size: const Size(400, 800), style: const ChartStyle(crosshair: false));
+    final center = tester.getCenter(find.byType(TradingChart));
+
+    await tester.tapAt(center);
+    await tester.pump();
+    expect(_crosshair(tester), isNull);
+
+    await tester.dragFrom(center, const Offset(50, 20));
+    await tester.pump();
+    expect(_crosshair(tester), isNull);
+    await tester.pumpAndSettle();
+  });
 }

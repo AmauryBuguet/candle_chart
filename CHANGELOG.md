@@ -1,3 +1,8 @@
+## 0.7.0
+
+* `TradingChart.magnetReach` sets how far in pixels the magnet reaches; it was a fixed 30.
+* `ChartStyle.crosshair` off also stops a finger's tap from pinning a crosshair, so its swipes pan; the cursor that aims a tool is still drawn.
+
 ## 0.6.1
 
 * The crosshair's price and time labels use the chart's label style, like the axis labels, instead of the default font.
