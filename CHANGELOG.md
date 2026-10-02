@@ -1,3 +1,7 @@
+## 0.6.1
+
+* The crosshair's price and time labels use the chart's label style, like the axis labels, instead of the default font.
+
 ## 0.6.0
 
 * The log scale is back: `ChartViewConfig.logScale` and `ChartTransform.logScale` return, with the axis fit, the ticks at 1, 2 and 5 of each decade, the price-axis pan and zoom by ratio, and a drawing dragged by ratio rather than by amount.

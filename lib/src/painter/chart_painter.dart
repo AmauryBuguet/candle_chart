@@ -742,7 +742,7 @@ class ChartPainter extends CustomPainter {
     final timePainter = TextPainter(
       text: TextSpan(
         text: timeText,
-        style: TextStyle(color: style.colors.crosshairLabelText),
+        style: style.labelStyle.textStyle.copyWith(color: style.colors.crosshairLabelText),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -771,7 +771,7 @@ class ChartPainter extends CustomPainter {
     final pricePainter = TextPainter(
       text: TextSpan(
         text: priceText,
-        style: TextStyle(color: style.colors.crosshairLabelText),
+        style: style.labelStyle.textStyle.copyWith(color: style.colors.crosshairLabelText),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
