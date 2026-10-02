@@ -429,6 +429,7 @@ class _TradingChartState extends State<TradingChart> {
                         timeAxis: _controller.timeAxis,
                         crosshairPosition: _controller.crosshairFor(c.biggest),
                         crosshairArmed: _controller.activeTool != null,
+                        handleSpot: _controller.handleSpotFor(c.biggest),
                         positions: widget.candles.isNotEmpty ? widget.positions : const [],
                         style: widget.style,
                         formatPrice: widget.formatPrice,

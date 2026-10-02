@@ -17,6 +17,7 @@ import '../models/chart_line.dart';
 import '../models/chart_order_line.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
+import '../models/coordinates.dart';
 import 'dashes.dart';
 import 'drawing_painter.dart';
 import 'position_samples.dart';
@@ -54,6 +55,7 @@ class ChartPainter extends CustomPainter {
     this.paneAxes = const [],
     this.logScale = false,
     this.drawings = const [],
+    this.handleSpot,
     this.placing,
   });
 
@@ -86,6 +88,9 @@ class ChartPainter extends CustomPainter {
 
   /// The user's drawings, in the price pane.
   final List<ChartDrawing> drawings;
+
+  /// Where a selected horizontal or vertical line keeps its handle.
+  final Coordinates? handleSpot;
 
   /// The drawing being placed, its last point following the pointer.
   final ChartDrawing? placing;
@@ -161,6 +166,7 @@ class ChartPainter extends CustomPainter {
         formatPrice: formatPrice,
         intervalMs: intervalMs,
         handleFill: style.colors.background,
+        handleSpot: handleSpot,
       );
       for (final drawing in drawings) {
         painter.draw(drawing);
@@ -972,6 +978,7 @@ class ChartPainter extends CustomPainter {
         oldDelegate.layout != layout ||
         oldDelegate.logScale != logScale ||
         oldDelegate.drawings != drawings ||
+        oldDelegate.handleSpot != handleSpot ||
         oldDelegate.placing != placing;
   }
 }

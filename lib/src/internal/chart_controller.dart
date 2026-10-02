@@ -118,7 +118,13 @@ class ChartController extends ChangeNotifier {
   int? _historyRequestedBefore;
 
   /// The host's drawings and the tool in hand, fed from the widget.
-  List<ChartDrawing> drawings = const [];
+  List<ChartDrawing> get drawings => _drawings;
+  List<ChartDrawing> _drawings = const [];
+  set drawings(List<ChartDrawing> value) {
+    if (value.where((d) => d.selected).firstOrNull?.id != selectedDrawing?.id) _handleSpot = null;
+    _drawings = value;
+  }
+
   ChartDrawingTool? activeTool;
   bool magnet = true;
   double magnetReach = 30;
@@ -160,6 +166,17 @@ class ChartController extends ChangeNotifier {
   ({ChartDrawing original, int? anchor, Coordinates from})? _dragging;
 
   ChartDrawing? get selectedDrawing => drawings.where((d) => d.selected).firstOrNull;
+
+  /// The middle of the price pane when the selected drawing was selected:
+  /// a horizontal line's handle keeps its time there, a vertical line's its
+  /// price.
+  Coordinates? _handleSpot;
+
+  Coordinates? handleSpotFor(Size size) {
+    if (selectedDrawing == null) return null;
+    final projection = projectionFor(size);
+    return _handleSpot ??= projection.coordinatesOf(projection.rect.center);
+  }
 
   /// The drawing being placed, its next point following the pointer, or
   /// nothing when no tool is in hand or no point is down yet.
@@ -236,7 +253,7 @@ class ChartController extends ChangeNotifier {
   /// elsewhere. Kept while a drawing is being dragged.
   MouseCursor cursorFor(Size size) {
     final drag = _dragging;
-    if (drag != null) return _moveCursor(drag.original);
+    if (drag != null) return _moveCursor(drag.original, drag.anchor);
     final position = crosshairPosition;
     if (position == null || activeTool != null) return MouseCursor.defer;
     final selected = selectedDrawing;
@@ -248,17 +265,18 @@ class ChartController extends ChangeNotifier {
         handles: true,
         tolerance: _tolerance,
         textSize: _textSize,
+        handleAt: handleSpotFor(size),
       );
-      if (hit != null) return _moveCursor(selected);
+      if (hit != null) return _moveCursor(selected, hit.anchor);
     }
     if (_drawingAt(position, size) != null) return SystemMouseCursors.click;
     return MouseCursor.defer;
   }
 
-  static MouseCursor _moveCursor(ChartDrawing drawing) => switch (drawing) {
-    ChartHorizontalLine() || ChartHorizontalRay() => SystemMouseCursors.resizeUpDown,
-    ChartVerticalLine() => SystemMouseCursors.resizeLeftRight,
-    _ => SystemMouseCursors.move,
+  static MouseCursor _moveCursor(ChartDrawing drawing, int? anchor) => switch (handleAxis(drawing, anchor)) {
+    DrawingHandleAxis.vertical => SystemMouseCursors.resizeUpDown,
+    DrawingHandleAxis.horizontal => SystemMouseCursors.resizeLeftRight,
+    DrawingHandleAxis.free => SystemMouseCursors.move,
   };
 
   /// The topmost drawing under [position], by its body.
@@ -299,6 +317,7 @@ class ChartController extends ChangeNotifier {
       handles: true,
       tolerance: _tolerance,
       textSize: _textSize,
+      handleAt: handleSpotFor(size),
     );
     if (hit == null) return false;
     _dragging = (original: selected, anchor: hit.anchor, from: projection.coordinatesOf(position));

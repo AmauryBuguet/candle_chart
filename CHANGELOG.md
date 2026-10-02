@@ -1,3 +1,10 @@
+## 0.8.0
+
+* A rectangle has a handle in the middle of each side, which moves that side alone.
+* A Fibonacci retracement has a handle in the middle of its 0 line, which moves it in price only.
+* A selected horizontal line keeps its handle at the time in the middle of the price pane when it was selected, and a vertical line at the price there; dragging either moves it along its own axis only.
+* The mouse cursor over a handle shows the way it drags.
+
 ## 0.7.0
 
 * `TradingChart.magnetReach` sets how far in pixels the magnet reaches; it was a fixed 30.

@@ -92,13 +92,17 @@ void main() {
       expect(hitTestDrawing(box.copyWith(hidden: true), const Offset(30, 12), projection, handles: false), isNull);
     });
 
-    test('a rectangle has a handle on each corner; the derived ones move both points', () {
+    test('a rectangle has a handle on each corner and side; the derived corners move both points', () {
       const box = ChartRectangle(id: 'b', points: points, color: Colors.blue);
       expect(drawingAnchors(box, projection), [
         const Offset(10, 10),
         const Offset(50, 50),
         const Offset(10, 50),
         const Offset(50, 10),
+        const Offset(10, 30),
+        const Offset(50, 30),
+        const Offset(30, 10),
+        const Offset(30, 50),
       ]);
       expect(hitTestDrawing(box, const Offset(11, 49), projection, handles: true)?.anchor, 2);
       expect(hitTestDrawing(box, const Offset(49, 11), projection, handles: true)?.anchor, 3);
@@ -114,6 +118,46 @@ void main() {
         const Coordinates(timestamp: 5, price: 95),
         points[1],
       ]);
+    });
+
+    test('a rectangle\'s side handle moves that side alone', () {
+      const box = ChartRectangle(id: 'b', points: points, color: Colors.blue);
+      const to = Coordinates(timestamp: 0, price: 99);
+      expect(hitTestDrawing(box, const Offset(11, 31), projection, handles: true)?.anchor, 4);
+      expect(movedAnchor(box, 4, to), [const Coordinates(timestamp: 0, price: 90), points[1]]);
+      expect(movedAnchor(box, 5, to), [points[0], const Coordinates(timestamp: 0, price: 50)]);
+      expect(movedAnchor(box, 6, to), [const Coordinates(timestamp: 10, price: 99), points[1]]);
+      expect(movedAnchor(box, 7, to), [points[0], const Coordinates(timestamp: 50, price: 99)]);
+      expect(handleAxis(box, 4), DrawingHandleAxis.horizontal);
+      expect(handleAxis(box, 7), DrawingHandleAxis.vertical);
+      expect(handleAxis(box, 0), DrawingHandleAxis.free);
+    });
+
+    test('a retracement has a handle mid-way along its 0 line that moves it in price only', () {
+      const fib = ChartFibRetracement(id: 'f', points: points, color: Colors.blue);
+      expect(drawingAnchors(fib, projection), [const Offset(10, 10), const Offset(50, 50), const Offset(30, 50)]);
+      expect(movedAnchor(fib, 2, const Coordinates(timestamp: 99, price: 30)), [
+        points[0],
+        const Coordinates(timestamp: 50, price: 30),
+      ]);
+      expect(handleAxis(fib, 2), DrawingHandleAxis.vertical);
+    });
+
+    test('a horizontal line keeps its handle at the given time, a vertical one at the given price', () {
+      const spot = Coordinates(timestamp: 70, price: 20);
+      const horizontal = ChartHorizontalLine(
+        id: 'h',
+        points: [Coordinates(timestamp: 10, price: 60)],
+        color: Colors.blue,
+      );
+      const vertical = ChartVerticalLine(id: 'v', points: [Coordinates(timestamp: 10, price: 60)], color: Colors.blue);
+      expect(drawingAnchors(horizontal, projection, handleAt: spot), [const Offset(70, 40)]);
+      expect(drawingAnchors(vertical, projection, handleAt: spot), [const Offset(10, 80)]);
+      expect(drawingAnchors(horizontal, projection), [const Offset(10, 40)]);
+      expect(hitTestDrawing(horizontal, const Offset(71, 41), projection, handles: true, handleAt: spot)?.anchor, 0);
+      const to = Coordinates(timestamp: 33, price: 44);
+      expect(movedAnchor(horizontal, 0, to), [const Coordinates(timestamp: 10, price: 44)]);
+      expect(movedAnchor(vertical, 0, to), [const Coordinates(timestamp: 33, price: 60)]);
     });
 
     test('a channel is a rectangle: the third point sets only its width, and its handle sits mid-way', () {
@@ -275,6 +319,28 @@ void main() {
         onPointerDownOutsideChart: () {},
       );
       expect(created, isA<ChartRectangle>());
+    });
+
+    test('a selected line\'s handle spot is the pane\'s middle when it was selected, kept while it stays so', () {
+      final line = ChartHorizontalLine(
+        id: 'h',
+        points: [Coordinates(timestamp: _start, price: 100)],
+        color: Colors.blue,
+        selected: true,
+      );
+      final controller = _controller();
+      expect(controller.handleSpotFor(_size), isNull);
+      controller.drawings = [line];
+      final projection = controller.projectionFor(_size);
+      final spot = controller.handleSpotFor(_size)!;
+      expect(projection.offsetOf(spot).dx, closeTo(projection.rect.center.dx, 1));
+      expect(projection.offsetOf(spot).dy, closeTo(projection.rect.center.dy, 0.01));
+      controller.drawings = [
+        line.copyWith(points: [Coordinates(timestamp: _start, price: 104)]),
+      ];
+      expect(controller.handleSpotFor(_size), spot);
+      controller.drawings = [line.copyWith(selected: false)];
+      expect(controller.handleSpotFor(_size), isNull);
     });
 
     group('magnet', () {

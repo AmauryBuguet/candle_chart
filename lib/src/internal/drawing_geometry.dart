@@ -63,13 +63,26 @@ class DrawingHitTolerance {
 }
 
 /// The screen positions of a drawing's handles: its points, plus a
-/// rectangle's two other corners; a channel's third handle sits in the
-/// middle of its second line.
-List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p) {
+/// rectangle's two other corners and the middles of its sides, and a
+/// retracement's handle in the middle of its 0 line; a channel's third
+/// handle sits in the middle of its second line. A horizontal line's handle
+/// sits at [handleAt]'s time and a vertical line's at its price, when given.
+List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p, {Coordinates? handleAt}) {
   final a = _pointsOf(drawing, p);
   return switch (drawing) {
-    ChartRectangle() => [...a, Offset(a[0].dx, a[1].dy), Offset(a[1].dx, a[0].dy)],
+    ChartRectangle() => [
+      ...a,
+      Offset(a[0].dx, a[1].dy),
+      Offset(a[1].dx, a[0].dy),
+      Offset(a[0].dx, (a[0].dy + a[1].dy) / 2),
+      Offset(a[1].dx, (a[0].dy + a[1].dy) / 2),
+      Offset((a[0].dx + a[1].dx) / 2, a[0].dy),
+      Offset((a[0].dx + a[1].dx) / 2, a[1].dy),
+    ],
+    ChartFibRetracement() => [...a, Offset((a[0].dx + a[1].dx) / 2, a[1].dy)],
     ChartParallelChannel() => [a[0], a[1], (a[0] + a[1]) / 2 + _channelOffset(a)],
+    ChartHorizontalLine() when handleAt != null => [Offset(p.xForTime(handleAt.timestamp), a[0].dy)],
+    ChartVerticalLine() when handleAt != null => [Offset(a[0].dx, p.yForPrice(handleAt.price))],
     _ => a,
   };
 }
@@ -77,18 +90,51 @@ List<Offset> drawingAnchors(ChartDrawing drawing, DrawingProjection p) {
 List<Offset> _pointsOf(ChartDrawing drawing, DrawingProjection p) => [for (final c in drawing.points) p.offsetOf(c)];
 
 /// The points of [drawing] once its handle [anchor] is dragged to [to]: a
-/// rectangle's derived corners move the two points they are made of.
+/// rectangle's derived corners move the two points they are made of, a
+/// side's middle only that side, a retracement's 0-line handle only its
+/// price; a horizontal line moves in price only, a vertical one in time.
 List<Coordinates> movedAnchor(ChartDrawing drawing, int anchor, Coordinates to) {
   final points = [...drawing.points];
-  if (drawing is ChartRectangle && anchor >= 2) {
-    final (timeOf, priceOf) = anchor == 2 ? (0, 1) : (1, 0);
-    points[timeOf] = Coordinates(timestamp: to.timestamp, price: points[timeOf].price);
-    points[priceOf] = Coordinates(timestamp: points[priceOf].timestamp, price: to.price);
-  } else {
-    points[anchor] = to;
+  Coordinates withTime(int i) => Coordinates(timestamp: to.timestamp, price: points[i].price);
+  Coordinates withPrice(int i) => Coordinates(timestamp: points[i].timestamp, price: to.price);
+  switch (drawing) {
+    case ChartRectangle() when anchor >= 2:
+      switch (anchor) {
+        case 2:
+          points[0] = withTime(0);
+          points[1] = withPrice(1);
+        case 3:
+          points[1] = withTime(1);
+          points[0] = withPrice(0);
+        case 4 || 5:
+          points[anchor - 4] = withTime(anchor - 4);
+        default:
+          points[anchor - 6] = withPrice(anchor - 6);
+      }
+    case ChartFibRetracement() when anchor == 2:
+      points[1] = withPrice(1);
+    case ChartHorizontalLine():
+      points[anchor] = withPrice(anchor);
+    case ChartVerticalLine():
+      points[anchor] = withTime(anchor);
+    default:
+      points[anchor] = to;
   }
   return points;
 }
+
+/// Which way a handle drags: only up and down, only across, or freely.
+enum DrawingHandleAxis { vertical, horizontal, free }
+
+/// The way [drawing]'s handle [anchor] drags, its body when null.
+DrawingHandleAxis handleAxis(ChartDrawing drawing, int? anchor) => switch (drawing) {
+  ChartHorizontalLine() || ChartHorizontalRay() => DrawingHandleAxis.vertical,
+  ChartVerticalLine() => DrawingHandleAxis.horizontal,
+  ChartRectangle() when anchor == 4 || anchor == 5 => DrawingHandleAxis.horizontal,
+  ChartRectangle() when anchor == 6 || anchor == 7 => DrawingHandleAxis.vertical,
+  ChartFibRetracement() when anchor == 2 => DrawingHandleAxis.vertical,
+  _ => DrawingHandleAxis.free,
+};
 
 /// A channel's second line: the first carried straight across to the
 /// third point, which sets only the width, so the two lines are always
@@ -165,9 +211,10 @@ DrawingHit? hitTestDrawing(
   required bool handles,
   DrawingHitTolerance tolerance = DrawingHitTolerance.mouse,
   Size Function(ChartText text)? textSize,
+  Coordinates? handleAt,
 }) {
   if (drawing.hidden) return null;
-  final anchors = drawingAnchors(drawing, p);
+  final anchors = drawingAnchors(drawing, p, handleAt: handleAt);
   if (handles) {
     for (var i = 0; i < anchors.length; i++) {
       if ((anchors[i] - position).distance <= tolerance.handle) return DrawingHit(anchor: i);

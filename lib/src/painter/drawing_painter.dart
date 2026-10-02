@@ -4,6 +4,7 @@ import 'package:flutter/painting.dart';
 
 import '../internal/drawing_geometry.dart';
 import '../models/chart_drawing.dart';
+import '../models/coordinates.dart';
 import 'dashes.dart';
 
 /// Draws the user's drawings into the price pane, and the handles of the
@@ -16,6 +17,7 @@ class DrawingPainter {
     required this.formatPrice,
     required this.intervalMs,
     required this.handleFill,
+    this.handleSpot,
   });
 
   final Canvas canvas;
@@ -26,6 +28,9 @@ class DrawingPainter {
 
   /// The chart's background, which hollows the handles out.
   final Color handleFill;
+
+  /// Where a horizontal or vertical line keeps its handle.
+  final Coordinates? handleSpot;
 
   void draw(ChartDrawing drawing) {
     if (drawing.hidden) return;
@@ -121,7 +126,7 @@ class DrawingPainter {
   void _drawHandles(ChartDrawing drawing) {
     final ring = Paint()..color = drawing.color;
     final fill = Paint()..color = handleFill;
-    for (final anchor in drawingAnchors(drawing, projection)) {
+    for (final anchor in drawingAnchors(drawing, projection, handleAt: handleSpot)) {
       canvas.drawCircle(anchor, 4.5, ring);
       canvas.drawCircle(anchor, 2.5, fill);
     }
