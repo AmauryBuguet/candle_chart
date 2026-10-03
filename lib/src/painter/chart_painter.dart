@@ -147,6 +147,7 @@ class ChartPainter extends CustomPainter {
       intervalMs: intervalMs,
       xForTime: (t) => _getXPositionFromTime(t, chartRect),
       yForValue: (v) => _getYPositionFromPrice(v, chartRect),
+      textStyle: style.labelStyle.textStyle,
     ).draw(_combinedOverlays());
 
     // Draw lines (e.g. draft entry/SL/TP lines)
@@ -190,6 +191,7 @@ class ChartPainter extends CustomPainter {
         intervalMs: intervalMs,
         xForTime: (t) => _getXPositionFromTime(t, chartRect),
         yForValue: (v) => rect.top + (1 - (v - axis.start) / axis.range) * rect.height,
+        textStyle: style.labelStyle.textStyle,
       ).draw(render);
     }
 
@@ -214,15 +216,17 @@ class ChartPainter extends CustomPainter {
   IndicatorRender _combinedOverlays() {
     final series = <IndicatorSeries>[];
     final bands = <IndicatorBand>[];
+    final boxes = <IndicatorBox>[];
     for (final (_, render) in overlays) {
       final base = series.length;
       series.addAll(render.series);
+      boxes.addAll(render.boxes);
       bands.addAll([
         for (final band in render.bands)
           IndicatorBand(first: base + band.first, second: base + band.second, above: band.above, below: band.below),
       ]);
     }
-    return IndicatorRender(series: series, bands: bands);
+    return IndicatorRender(series: series, bands: bands, boxes: boxes);
   }
 
   /// The hairline between two panes.

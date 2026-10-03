@@ -157,6 +157,7 @@ class ChartController extends ChangeNotifier {
   void Function(Object? id)? onDrawingSelected;
   void Function(Object id)? onDrawingDeleted;
   VoidCallback? onDrawingCancelled;
+  ChartDrawing Function(ChartDrawing drawing)? styleDrawing;
 
   /// The points placed so far with [activeTool].
   List<Coordinates> _placed = const [];
@@ -185,8 +186,9 @@ class ChartController extends ChangeNotifier {
     if (tool == null || _placed.isEmpty) return null;
     final pointer = _aimFor(size);
     final next = pointer == null ? _placed.last : _aimed(_getEventPosition(pointer, size), size, from: _placed.last);
-    final points = [..._placed, for (var i = _placed.length; i < tool.pointCount; i++) next];
-    return tool.create(id: '_placing', points: points, color: _colors.drawing);
+    final missing = tool.open ? 1 : tool.pointCount - _placed.length;
+    final points = [..._placed, for (var i = 0; i < missing; i++) next];
+    return _styled(tool.create(id: '_placing', points: points, color: _colors.drawing, fibLevels: _colors.fibLevels));
   }
 
   /// Drops the tool's half-placed points and the selection, and tells the
@@ -292,16 +294,46 @@ class ChartController extends ChangeNotifier {
   }
 
   /// Places the tool's next point at [position]; the last one creates the
-  /// drawing.
+  /// drawing. An open tool's point placed on its last one finishes it
+  /// instead.
   void _place(ChartDrawingTool tool, Offset position, Size size) {
-    _placed = [..._placed, _aimed(_getEventPosition(position, size), size, from: _placed.lastOrNull)];
-    if (_placed.length == tool.pointCount) {
-      onDrawingCreated?.call(
-        tool.create(id: 'drawing-${DateTime.now().microsecondsSinceEpoch}', points: _placed, color: _colors.drawing),
-      );
-      _placed = const [];
+    final point = _aimed(_getEventPosition(position, size), size, from: _placed.lastOrNull);
+    final last = _placed.lastOrNull;
+    if (tool.open && last != null) {
+      final projection = projectionFor(size);
+      if ((projection.offsetOf(point) - projection.offsetOf(last)).distance <= _tolerance.handle) {
+        finishDrawing();
+        return;
+      }
     }
+    _placed = [..._placed, point];
+    if (!tool.open && _placed.length == tool.pointCount) _create(tool);
     notifyListeners();
+  }
+
+  /// Creates an open tool's drawing from the points placed so far, when
+  /// there are enough of them.
+  void finishDrawing() {
+    final tool = activeTool;
+    if (tool == null || !tool.open || _placed.length < tool.pointCount) return;
+    _create(tool);
+    notifyListeners();
+  }
+
+  ChartDrawing _styled(ChartDrawing drawing) => styleDrawing?.call(drawing) ?? drawing;
+
+  void _create(ChartDrawingTool tool) {
+    onDrawingCreated?.call(
+      _styled(
+        tool.create(
+          id: 'drawing-${DateTime.now().microsecondsSinceEpoch}',
+          points: _placed,
+          color: _colors.drawing,
+          fibLevels: _colors.fibLevels,
+        ),
+      ),
+    );
+    _placed = const [];
   }
 
   /// Takes hold of the selected drawing, by an anchor or its body, when the

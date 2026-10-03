@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/painting.dart';
 
 import '../internal/drawing_geometry.dart';
@@ -47,12 +45,16 @@ class DrawingPainter {
     for (final (from, to) in drawingSegments(drawing, projection)) {
       drawStyledLine(canvas: canvas, p1: from, p2: to, style: drawing.lineStyle, paint: paint);
     }
+    for (final (from, to, level) in fibLevelLines(drawing, projection)) {
+      paint.color = level.color ?? drawing.color;
+      drawStyledLine(canvas: canvas, p1: from, p2: to, style: drawing.lineStyle, paint: paint);
+    }
 
     switch (drawing) {
       case ChartFibRetracement():
-        _drawFibLabels(drawing);
+        _drawFibLabels(drawing, (ratio) => fibPrice(drawing.points, ratio));
       case ChartFibExtension():
-        _drawFibExtensionLabels(drawing);
+        _drawFibLabels(drawing, (ratio) => fibExtensionPrice(drawing.points, ratio));
       case ChartMeasure():
         _drawMeasureLabel(drawing);
       case ChartText():
@@ -68,24 +70,14 @@ class DrawingPainter {
   /// The size a text note takes, for hit-testing it.
   Size textSize(ChartText text) => _textPainter(text.text, text.color).size;
 
-  void _drawFibLabels(ChartFibRetracement drawing) {
-    final anchors = drawingAnchors(drawing, projection);
-    final left = min(anchors[0].dx, anchors[1].dx);
-    for (final level in fibLevels) {
-      final price = fibPrice(drawing.points, level);
-      final y = projection.yForPrice(price);
-      final tp = _textPainter('${level.toStringAsFixed(3)}  ${formatPrice(price)}', drawing.color);
-      tp.paint(canvas, Offset(left + 4, y - tp.height - 1));
-    }
-  }
-
-  void _drawFibExtensionLabels(ChartFibExtension drawing) {
-    final left = projection.xForTime(drawing.points[2].timestamp);
-    for (final level in fibExtensionLevels) {
-      final price = fibExtensionPrice(drawing.points, level);
-      final y = projection.yForPrice(price);
-      final tp = _textPainter('${level.toStringAsFixed(3)}  ${formatPrice(price)}', drawing.color);
-      tp.paint(canvas, Offset(left + 4, y - tp.height - 1));
+  /// Each shown level's ratio and price over its left end, in its colour.
+  void _drawFibLabels(ChartDrawing drawing, double Function(double ratio) priceOf) {
+    for (final (from, _, level) in fibLevelLines(drawing, projection)) {
+      final tp = _textPainter(
+        '${level.ratio.toStringAsFixed(3)}  ${formatPrice(priceOf(level.ratio))}',
+        level.color ?? drawing.color,
+      );
+      tp.paint(canvas, Offset(from.dx + 4, from.dy - tp.height - 1));
     }
   }
 

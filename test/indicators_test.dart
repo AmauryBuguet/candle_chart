@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trading_chart/src/internal/calendar.dart';
 import 'package:trading_chart/src/internal/indicators.dart';
 import 'package:trading_chart/trading_chart.dart';
 
@@ -254,6 +255,132 @@ void main() {
       final flipped = superTrend(falling, 2, 1);
       expect(flipped.last!.up, isFalse);
       expect(flipped.last!.value, greaterThan(5));
+    });
+  });
+
+  group('period levels', () {
+    const hour = Duration.millisecondsPerHour;
+    final monday = DateTime.utc(2025, 10, 13).millisecondsSinceEpoch;
+
+    List<ChartCandle> hourly(int from, int count, {int intervalMs = hour}) => [
+      for (var i = 0; i < count; i++)
+        ChartCandle(
+          timestamp: from + i * intervalMs,
+          endTimestamp: from + (i + 1) * intervalMs,
+          open: 100.0 + i,
+          high: 101.0 + i,
+          low: 99.0 + i,
+          close: 100.5 + i,
+          volume: 1,
+        ),
+    ];
+
+    ChartPeriodLevels day({ChartPeriodRange? previous, ChartPeriodRange? current}) => ChartPeriodLevels(
+      period: ChartLevelPeriod.day,
+      previousHighColor: null,
+      previousLowColor: null,
+      openColor: null,
+      highColor: null,
+      lowColor: null,
+      previous: previous,
+      current: current,
+    );
+
+    test("the current day's levels from its first candle: yesterday's range, its open, its range so far", () {
+      final levels = periodLevels(hourly(monday, 30), day())!;
+      expect(levels.from, 24);
+      // Day one ran from 99 (its first low) to 124 (its last high).
+      expect((levels.previousHigh, levels.previousLow), (124.0, 99.0));
+      expect((levels.open, levels.high, levels.low), (124.0, 130.0, 123.0));
+    });
+
+    test('a day the candles do not cover in full gives nothing of it', () {
+      final levels = periodLevels(hourly(monday + 6 * hour, 24), day())!;
+      expect((levels.previousHigh, levels.previousLow), (null, null));
+      expect(levels.open, 118.0);
+      final midway = periodLevels(hourly(monday + 30 * hour, 4), day())!;
+      expect((midway.open, midway.high, midway.low), (null, 104.0, 99.0));
+    });
+
+    test("the host's ranges stand in for what the candles lack, the current one carried on by them", () {
+      final candles = hourly(monday + 30 * hour, 4);
+      final today = monday + 24 * hour;
+      final levels = periodLevels(
+        candles,
+        day(
+          previous: ChartPeriodRange(start: monday, open: 90, high: 140, low: 80),
+          current: ChartPeriodRange(start: today, open: 95, high: 102, low: 96),
+        ),
+      )!;
+      expect((levels.previousHigh, levels.previousLow), (140.0, 80.0));
+      // The candles since reach 104 and go no lower than 96 already held.
+      expect((levels.open, levels.high, levels.low), (95.0, 104.0, 96.0));
+
+      final stale = periodLevels(
+        candles,
+        day(previous: ChartPeriodRange(start: monday - 24 * hour, open: 1, high: 2, low: 1)),
+      )!;
+      expect(stale.previousHigh, isNull);
+    });
+
+    test('candles as long as the period show nothing', () {
+      expect(periodLevels(hourly(monday, 10, intervalMs: Duration.millisecondsPerDay), day()), isNull);
+    });
+  });
+
+  group('sessions', () {
+    const hour = Duration.millisecondsPerHour;
+    // Wednesday 15 October 2025, in London and New York summer time.
+    final day = DateTime.utc(2025, 10, 15).millisecondsSinceEpoch;
+
+    List<ChartCandle> hourly(int from, int count, {int intervalMs = hour}) => [
+      for (var i = 0; i < count; i++)
+        ChartCandle(
+          timestamp: from + i * intervalMs,
+          endTimestamp: from + (i + 1) * intervalMs,
+          open: 100,
+          high: 100.0 + i,
+          low: 100.0 - i,
+          close: 100,
+          volume: 1,
+        ),
+    ];
+
+    test('each session spans its hours and the range of the candles opening in them', () {
+      final ranges = sessionRanges(hourly(day, 24));
+      expect(ranges.map((r) => r.session), MarketSession.values);
+      expect(ranges[0], (session: MarketSession.asia, start: day, end: day + 9 * hour, high: 108.0, low: 92.0));
+      expect(ranges[1], (
+        session: MarketSession.london,
+        start: day + 7 * hour,
+        end: day + 16 * hour,
+        high: 115.0,
+        low: 85.0,
+      ));
+      expect(ranges[2], (
+        session: MarketSession.newYork,
+        start: day + 12 * hour,
+        end: day + 21 * hour,
+        high: 120.0,
+        low: 80.0,
+      ));
+    });
+
+    test('the live session spans what it has so far; one opened before the candles is left out', () {
+      final ranges = sessionRanges(hourly(day + 3 * hour, 11));
+      expect(ranges.map((r) => r.session), [MarketSession.london, MarketSession.newYork]);
+      expect(ranges[1].high, 110);
+    });
+
+    test('candles longer than an hour show none', () {
+      expect(sessionRanges(hourly(day, 6, intervalMs: 4 * hour)), isEmpty);
+    });
+
+    test("none on a weekend: Friday's three sessions, then Monday's", () {
+      final friday = DateTime.utc(2025, 10, 17).millisecondsSinceEpoch;
+      final ranges = sessionRanges(hourly(friday, 4 * 24));
+      expect(ranges.map((r) => r.session), [...MarketSession.values, ...MarketSession.values]);
+      expect(ranges[3].start, friday + 3 * Duration.millisecondsPerDay);
     });
   });
 }

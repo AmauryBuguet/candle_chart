@@ -18,18 +18,23 @@ List<ChartCandle> _candles() {
   ];
 }
 
-Future<void> _pumpChart(WidgetTester tester, List<ChartIndicator> indicators) async {
+Future<void> _pumpChart(
+  WidgetTester tester,
+  List<ChartIndicator> indicators, {
+  List<ChartCandle>? candles,
+  Duration interval = const Duration(minutes: 1),
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: TradingChart(
-          candles: _candles(),
+          candles: candles ?? _candles(),
           lines: const [],
           orderLines: const [],
           positions: const [],
           style: const ChartStyle(),
           indicators: indicators,
-          interval: const Duration(minutes: 1),
+          interval: interval,
           viewConfig: const ChartViewConfig(),
           viewResetKey: 'BTC',
           formatPrice: (price) => price.toStringAsFixed(1),
@@ -62,7 +67,62 @@ void main() {
       ),
       ChartSuperTrend(upColor: Colors.green, downColor: Colors.red),
       ChartVolumeProfile(color: Colors.grey, pocColor: Colors.blue),
+      ChartPeriodLevels(
+        period: ChartLevelPeriod.day,
+        previousHighColor: Colors.green,
+        previousLowColor: Colors.red,
+        openColor: Colors.grey,
+        highColor: Colors.blue,
+        lowColor: Colors.orange,
+      ),
+      ChartSessions(asiaColor: Colors.amber, londonColor: Colors.blue, newYorkColor: Colors.purple),
     ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('day levels and session boxes paint with their labels over a week of hourly candles', (tester) async {
+    const hour = Duration.millisecondsPerHour;
+    final start =
+        (DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay - 7) * Duration.millisecondsPerDay;
+    await _pumpChart(
+      tester,
+      const [
+        ChartPeriodLevels(
+          period: ChartLevelPeriod.day,
+          previousHighColor: Colors.green,
+          previousLowColor: Colors.red,
+          openColor: Colors.grey,
+          highColor: Colors.blue,
+          lowColor: Colors.orange,
+          previousHighLabel: 'PDH',
+          previousLowLabel: 'PDL',
+          openLabel: 'DO',
+          highLabel: 'DH',
+          lowLabel: 'DL',
+        ),
+        ChartSessions(
+          asiaColor: Colors.amber,
+          londonColor: Colors.blue,
+          newYorkColor: Colors.purple,
+          asiaLabel: 'Asia',
+          londonLabel: 'London',
+          newYorkLabel: 'New York',
+        ),
+      ],
+      candles: [
+        for (var i = 0; i < 7 * 24; i++)
+          ChartCandle(
+            timestamp: start + i * hour,
+            endTimestamp: start + (i + 1) * hour,
+            open: 100.0 + i % 24,
+            high: 102.0 + i % 24,
+            low: 99.0 + i % 24,
+            close: 101.0 + i % 24,
+            volume: 1,
+          ),
+      ],
+      interval: const Duration(hours: 1),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -82,6 +142,7 @@ void main() {
               ChartRsi(color: Colors.blue),
               ChartMacd(macdColor: Colors.blue, signalColor: Colors.red, upColor: Colors.green, downColor: Colors.red),
               ChartStochastic(kColor: Colors.blue, dColor: Colors.red),
+              ChartAtr(color: Colors.orange),
             ],
             interval: const Duration(minutes: 1),
             viewConfig: const ChartViewConfig(),
@@ -100,7 +161,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final transform = controller.transform!;
-    expect(transform.panes, hasLength(4));
+    expect(transform.panes, hasLength(5));
     // Panes stack under the price pane, top to bottom, none overlapping.
     var bottom = transform.plotArea.bottom;
     for (final pane in transform.panes) {

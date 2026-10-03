@@ -9,8 +9,8 @@ part 'chart_drawing_kinds.dart';
 /// How a drawing's lines are stroked.
 enum ChartLineStyle { solid, dashed, dotted }
 
-/// Something the user drew on the chart, anchored on one to three points in
-/// time and price so it moves with the candles.
+/// Something the user drew on the chart, anchored on points in time and
+/// price so it moves with the candles.
 ///
 /// A drawing is a value object the host keeps in a list and hands to the
 /// chart, exactly like a line: the chart hit-tests, selects and drags it,
@@ -72,6 +72,8 @@ sealed class ChartDrawing extends Equatable {
     'locked': locked,
     'hidden': hidden,
     if (this case ChartText(:final text)) 'text': text,
+    if (this case ChartFibRetracement(:final levels) || ChartFibExtension(:final levels))
+      'levels': [for (final level in levels) level.toJson()],
   };
 
   /// The drawing [toJson] wrote. The id comes back as the string it was
@@ -88,16 +90,52 @@ sealed class ChartDrawing extends Equatable {
       color: Color(json['color'] as int),
       text: json['text'] as String? ?? '',
     );
-    return drawing.copyWith(
+    final styled = drawing.copyWith(
       width: (json['width'] as num).toDouble(),
       lineStyle: ChartLineStyle.values.byName(json['lineStyle'] as String),
       locked: json['locked'] as bool,
       hidden: json['hidden'] as bool,
     );
+    final levels = [
+      for (final level in json['levels'] as List? ?? const []) ChartFibLevel.fromJson(level as Map<String, dynamic>),
+    ];
+    if (levels.isEmpty) return styled;
+    return switch (styled) {
+      ChartFibRetracement() => styled.copyWith(levels: levels),
+      ChartFibExtension() => styled.copyWith(levels: levels),
+      _ => styled,
+    };
   }
 
   @override
   List<Object?> get props => [id, points, color, width, lineStyle, selected, locked, hidden];
+}
+
+/// One level of a Fibonacci drawing: its ratio, whether it is drawn, and
+/// its colour when it is not the drawing's.
+class ChartFibLevel extends Equatable {
+  const ChartFibLevel(this.ratio, {this.color, this.visible = true});
+
+  factory ChartFibLevel.fromJson(Map<String, dynamic> json) => ChartFibLevel(
+    (json['ratio'] as num).toDouble(),
+    color: switch (json['color']) {
+      final int value => Color(value),
+      _ => null,
+    },
+    visible: json['visible'] as bool? ?? true,
+  );
+
+  final double ratio;
+  final Color? color;
+  final bool visible;
+
+  ChartFibLevel copyWith({Color? color, bool? visible}) =>
+      ChartFibLevel(ratio, color: color ?? this.color, visible: visible ?? this.visible);
+
+  Map<String, dynamic> toJson() => {'ratio': ratio, 'color': ?color?.toARGB32(), 'visible': visible};
+
+  @override
+  List<Object?> get props => [ratio, color, visible];
 }
 
 /// The drawing tools, each the kind of drawing it makes and how many
@@ -114,14 +152,32 @@ enum ChartDrawingTool {
   fibRetracement(2),
   fibExtension(3),
   text(1),
-  measure(2);
+  measure(2),
+  polyline(2, open: true);
 
-  const ChartDrawingTool(this.pointCount);
+  const ChartDrawingTool(this.pointCount, {this.open = false});
 
+  /// The points it takes, the fewest for an [open] one.
   final int pointCount;
 
-  ChartDrawing create({required Object id, required List<Coordinates> points, required Color color, String text = ''}) {
-    assert(points.length == pointCount);
+  /// Takes any number of points from [pointCount] on, finished by placing
+  /// one on the last.
+  final bool open;
+
+  /// A new drawing of this kind; a Fibonacci one's levels take the colour
+  /// of the level of the same ratio in [fibLevels].
+  ChartDrawing create({
+    required Object id,
+    required List<Coordinates> points,
+    required Color color,
+    String text = '',
+    List<ChartFibLevel> fibLevels = const [],
+  }) {
+    assert(open ? points.length >= pointCount : points.length == pointCount);
+    List<ChartFibLevel> levels(List<ChartFibLevel> defaults) => [
+      for (final level in defaults)
+        ChartFibLevel(level.ratio, color: fibLevels.where((l) => l.ratio == level.ratio).firstOrNull?.color),
+    ];
     return switch (this) {
       trendLine => ChartTrendLine(id: id, points: points, color: color),
       ray => ChartRay(id: id, points: points, color: color),
@@ -131,10 +187,21 @@ enum ChartDrawingTool {
       verticalLine => ChartVerticalLine(id: id, points: points, color: color),
       rectangle => ChartRectangle(id: id, points: points, color: color),
       parallelChannel => ChartParallelChannel(id: id, points: points, color: color),
-      fibRetracement => ChartFibRetracement(id: id, points: points, color: color),
-      fibExtension => ChartFibExtension(id: id, points: points, color: color),
+      fibRetracement => ChartFibRetracement(
+        id: id,
+        points: points,
+        color: color,
+        levels: levels(ChartFibRetracement.defaultLevels),
+      ),
+      fibExtension => ChartFibExtension(
+        id: id,
+        points: points,
+        color: color,
+        levels: levels(ChartFibExtension.defaultLevels),
+      ),
       ChartDrawingTool.text => ChartText(id: id, points: points, color: color, text: text),
       measure => ChartMeasure(id: id, points: points, color: color),
+      polyline => ChartPolyline(id: id, points: points, color: color),
     };
   }
 }

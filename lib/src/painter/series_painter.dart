@@ -1,11 +1,12 @@
 import 'dart:math';
-import 'dart:ui';
+
+import 'package:flutter/painting.dart';
 
 import '../internal/indicator_render.dart';
 import '../models/chart_candle.dart';
 
-/// Draws an indicator's series into one pane: fills first, then bars, then
-/// lines, all clipped to the pane.
+/// Draws an indicator's series into one pane: boxes and fills first, then
+/// bars, then lines, then labels, all clipped to the pane.
 class SeriesPainter {
   SeriesPainter({
     required this.canvas,
@@ -16,6 +17,7 @@ class SeriesPainter {
     required this.intervalMs,
     required this.xForTime,
     required this.yForValue,
+    required this.textStyle,
   });
 
   final Canvas canvas;
@@ -29,10 +31,14 @@ class SeriesPainter {
   final double Function(int timestamp) xForTime;
   final double Function(double value) yForValue;
 
+  /// The labels' style, in each series' or box's colour.
+  final TextStyle textStyle;
+
   void draw(IndicatorRender render) {
     if (firstIndex == -1 || endIndex == -1 || candles.isEmpty) return;
     canvas.save();
     canvas.clipRect(rect);
+    render.boxes.forEach(_drawBox);
     for (final band in render.bands) {
       _drawBand(render.series[band.first], render.series[band.second], band);
     }
@@ -41,6 +47,7 @@ class SeriesPainter {
     }
     for (final series in render.series) {
       if (series.kind == SeriesKind.line) _drawLine(series);
+      if (series.kind == SeriesKind.step) _drawSteps(series);
     }
     canvas.restore();
   }
@@ -80,6 +87,79 @@ class SeriesPainter {
     canvas.drawPath(path, paint);
   }
 
+  /// One segment per run of equal values, its label over its right end —
+  /// or the pane's, for a run going past it — when the run is wide enough
+  /// on screen to hold it.
+  void _drawSteps(IndicatorSeries series) {
+    final runs = <({double left, double right, double y})>[];
+    double? previous;
+    final (from, to) = _range(series.offset);
+    for (var i = from; i < to; i++) {
+      final value = series.values[i];
+      if (value != null) {
+        final right = _x(i, series.offset + 1);
+        if (value == previous) {
+          runs.last = (left: runs.last.left, right: right, y: runs.last.y);
+        } else {
+          runs.add((left: _x(i, series.offset), right: right, y: yForValue(value)));
+        }
+      }
+      previous = value;
+    }
+    final path = Path();
+    for (final run in runs) {
+      path
+        ..moveTo(run.left, run.y)
+        ..lineTo(run.right, run.y);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = series.width
+        ..color = series.color,
+    );
+    if (series.label.isEmpty) return;
+    final label = _label(series.label, series.color);
+    for (final run in runs) {
+      final left = max(run.left, rect.left);
+      final right = min(run.right, rect.right);
+      if (right - left < label.width + 2 * _labelInset) continue;
+      label.paint(canvas, Offset(right - label.width - _labelInset, run.y - label.height));
+    }
+  }
+
+  /// A box, its label inside its top corner when it is tall enough, over it
+  /// otherwise, and only when it is wide enough on screen.
+  void _drawBox(IndicatorBox box) {
+    final r = Rect.fromLTRB(xForTime(box.start), yForValue(box.high), xForTime(box.end), yForValue(box.low));
+    if (r.right < rect.left || r.left > rect.right) return;
+    canvas.drawRect(r, Paint()..color = box.color.withAlpha(22));
+    canvas.drawRect(
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..color = box.color.withAlpha(120),
+    );
+    if (box.label.isEmpty) return;
+    final label = _label(box.label, box.color);
+    final left = max(r.left, rect.left);
+    if (min(r.right, rect.right) - left < label.width + 2 * _labelInset) return;
+    final inside = r.height >= label.height + 2 * _labelInset;
+    label.paint(canvas, Offset(left + _labelInset, inside ? r.top + _labelInset : r.top - label.height));
+  }
+
+  static const _labelInset = 4.0;
+
+  TextPainter _label(String text, Color color) => TextPainter(
+    text: TextSpan(
+      text: text,
+      style: textStyle.copyWith(color: color),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+
   void _drawHistogram(IndicatorSeries series) {
     final halfWidth = (xForTime(intervalMs) - xForTime(0)) * 0.35;
     final zero = yForValue(0);
@@ -88,7 +168,9 @@ class SeriesPainter {
     for (var i = from; i < to; i++) {
       final value = series.values[i];
       if (value == null) continue;
-      paint.color = series.barColors?[i] ?? series.color;
+      final color = series.barColors == null ? series.color : series.barColors![i];
+      if (color == null) continue;
+      paint.color = color;
       final x = _x(i, series.offset);
       final y = yForValue(value);
       final top = min(y, zero);

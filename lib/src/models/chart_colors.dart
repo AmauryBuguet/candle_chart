@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 
+import 'chart_drawing.dart';
+
 /// Defines the color scheme used in the chart. All fields default to a
 /// neutral palette; hosts should normally supply their own theme colors.
 class ChartColors extends Equatable {
@@ -19,6 +21,7 @@ class ChartColors extends Equatable {
     this.positionLoss = Colors.red,
     this.line = Colors.white70,
     this.drawing = Colors.blueAccent,
+    this.fibLevels = const [],
   });
 
   /// Background color of the chart.
@@ -62,8 +65,14 @@ class ChartColors extends Equatable {
   /// The colour a drawing is created in.
   final Color drawing;
 
+  /// The colour a new Fibonacci drawing's level of each ratio is created
+  /// in, the same in a retracement and an extension; a level whose ratio is
+  /// not here takes the drawing's.
+  final List<ChartFibLevel> fibLevels;
+
   @override
   List<Object> get props => [
+    fibLevels,
     background,
     upCandle,
     downCandle,

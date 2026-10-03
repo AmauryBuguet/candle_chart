@@ -35,7 +35,8 @@ class ChartRsi extends ChartPaneIndicator {
 }
 
 /// Moving average convergence/divergence: the difference of two EMAs, its
-/// signal EMA, and their gap as a histogram.
+/// signal EMA, and their gap as a histogram. A line with no colour is not
+/// drawn, nor the bars on a side with none.
 class ChartMacd extends ChartPaneIndicator {
   const ChartMacd({
     this.fastPeriod = 12,
@@ -51,13 +52,13 @@ class ChartMacd extends ChartPaneIndicator {
   final int fastPeriod;
   final int slowPeriod;
   final int signalPeriod;
-  final Color macdColor;
-  final Color signalColor;
-  final Color upColor;
-  final Color downColor;
+  final Color? macdColor;
+  final Color? signalColor;
+  final Color? upColor;
+  final Color? downColor;
 
   @override
-  List<Object> get props => [fastPeriod, slowPeriod, signalPeriod, macdColor, signalColor, upColor, downColor, height];
+  List<Object?> get props => [fastPeriod, slowPeriod, signalPeriod, macdColor, signalColor, upColor, downColor, height];
 
   @override
   String formatValue(double value) => formatCompact(value);
@@ -65,7 +66,7 @@ class ChartMacd extends ChartPaneIndicator {
 
 /// The stochastic oscillator: where the close sits in the recent range (%K,
 /// smoothed) and its moving average (%D), with guide lines at the
-/// [oversold] and [overbought] levels.
+/// [oversold] and [overbought] levels. A line with no colour is not drawn.
 class ChartStochastic extends ChartPaneIndicator {
   const ChartStochastic({
     this.kPeriod = 14,
@@ -81,16 +82,31 @@ class ChartStochastic extends ChartPaneIndicator {
   final int kPeriod;
   final int kSmoothing;
   final int dPeriod;
-  final Color kColor;
-  final Color dColor;
+  final Color? kColor;
+  final Color? dColor;
   final double overbought;
   final double oversold;
 
   @override
-  List<Object> get props => [kPeriod, kSmoothing, dPeriod, kColor, dColor, overbought, oversold, height];
+  List<Object?> get props => [kPeriod, kSmoothing, dPeriod, kColor, dColor, overbought, oversold, height];
 
   @override
   String formatValue(double value) => value.toStringAsFixed(0);
+}
+
+/// Wilder's average true range: how far the price moves in a candle, gaps
+/// from the previous close included, in price units.
+class ChartAtr extends ChartPaneIndicator {
+  const ChartAtr({this.period = 14, required this.color, super.height}) : assert(period > 0);
+
+  final int period;
+  final Color color;
+
+  @override
+  List<Object> get props => [period, color, height];
+
+  @override
+  String formatValue(double value) => formatCompact(value);
 }
 
 /// A short reading of a value whose scale is unknown in advance: thousands

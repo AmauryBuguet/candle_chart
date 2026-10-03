@@ -4,17 +4,10 @@ import 'dart:ui';
 import '../models/chart_drawing.dart';
 import '../models/coordinates.dart';
 
-/// The Fibonacci retracement ratios: 1 sits on the first point's price, 0
-/// on the second's.
-const List<double> fibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-
-/// The price of a Fibonacci [level] between the two anchors' prices.
+/// The price of a Fibonacci retracement [level] between the two anchors'
+/// prices: 1 on the first point's, 0 on the second's.
 double fibPrice(List<Coordinates> points, double level) =>
     points[0].price + (points[1].price - points[0].price) * (1 - level);
-
-/// The trend-based Fibonacci extension ratios: 0 sits on the third point's
-/// price, 1 a whole first-to-second move above (or below) it.
-const List<double> fibExtensionLevels = [0, 1, 1.618, 2.618, 3.618, 4.236];
 
 /// The price of a Fibonacci extension [level]: the move from the first
 /// point to the second, scaled by [level], projected from the third.
@@ -152,7 +145,8 @@ Offset _channelOffset(List<Offset> a) {
   return normal * (toThird.dx * normal.dx + toThird.dy * normal.dy);
 }
 
-/// The straight strokes of a drawing, extended lines run out past the pane.
+/// The straight strokes of a drawing in its own colour, extended lines run
+/// out past the pane; a Fibonacci drawing's levels are [fibLevelLines].
 List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p) {
   final a = _pointsOf(drawing, p);
   final rect = p.rect;
@@ -166,15 +160,10 @@ List<(Offset, Offset)> drawingSegments(ChartDrawing drawing, DrawingProjection p
     ChartVerticalLine() => [(Offset(a[0].dx, rect.top), Offset(a[0].dx, rect.bottom))],
     ChartRectangle() || ChartMeasure() => _rectEdges(Rect.fromPoints(a[0], a[1])),
     ChartParallelChannel() => [(a[0], a[1]), _channelSecondLine(a)],
-    ChartFibRetracement() => [
-      for (final y in _fibYs(drawing, p)) (Offset(min(a[0].dx, a[1].dx), y), Offset(max(a[0].dx, a[1].dx), y)),
-    ],
-    ChartFibExtension() => [
-      (a[0], a[1]),
-      (a[1], a[2]),
-      for (final y in _fibExtensionYs(drawing, p)) (Offset(a[2].dx, y), Offset(rect.right, y)),
-    ],
+    ChartFibRetracement() => const [],
+    ChartFibExtension() => [(a[0], a[1]), (a[1], a[2])],
     ChartText() => const [],
+    ChartPolyline() => [for (var i = 1; i < a.length; i++) (a[i - 1], a[i])],
   };
 }
 
@@ -196,11 +185,29 @@ Path? drawingArea(ChartDrawing drawing, DrawingProjection p) {
   };
 }
 
-Iterable<double> _fibYs(ChartFibRetracement drawing, DrawingProjection p) =>
-    fibLevels.map((level) => p.yForPrice(fibPrice(drawing.points, level)));
-
-Iterable<double> _fibExtensionYs(ChartFibExtension drawing, DrawingProjection p) =>
-    fibExtensionLevels.map((level) => p.yForPrice(fibExtensionPrice(drawing.points, level)));
+/// A Fibonacci drawing's shown levels, each a line with the level it
+/// draws: a retracement's between its two points, an extension's from its
+/// third point to the right edge. Nothing for any other drawing.
+List<(Offset, Offset, ChartFibLevel)> fibLevelLines(ChartDrawing drawing, DrawingProjection p) {
+  final a = _pointsOf(drawing, p);
+  return switch (drawing) {
+    ChartFibRetracement(:final levels) => [
+      for (final level in levels)
+        if (level.visible)
+          switch (p.yForPrice(fibPrice(drawing.points, level.ratio))) {
+            final y => (Offset(min(a[0].dx, a[1].dx), y), Offset(max(a[0].dx, a[1].dx), y), level),
+          },
+    ],
+    ChartFibExtension(:final levels) => [
+      for (final level in levels)
+        if (level.visible)
+          switch (p.yForPrice(fibExtensionPrice(drawing.points, level.ratio))) {
+            final y => (Offset(a[2].dx, y), Offset(p.rect.right, y), level),
+          },
+    ],
+    _ => const [],
+  };
+}
 
 /// Whether [position] is on the drawing: on an anchor when [handles] are
 /// live, else on a stroke — a filled area is not a handle on it.
@@ -225,6 +232,9 @@ DrawingHit? hitTestDrawing(
     return (anchors[0] & size).inflate(tolerance.stroke).contains(position) ? const DrawingHit() : null;
   }
   for (final (from, to) in drawingSegments(drawing, p)) {
+    if (_distanceToSegment(position, from, to) <= tolerance.stroke) return const DrawingHit();
+  }
+  for (final (from, to, _) in fibLevelLines(drawing, p)) {
     if (_distanceToSegment(position, from, to) <= tolerance.stroke) return const DrawingHit();
   }
   return null;

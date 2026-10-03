@@ -73,7 +73,9 @@ class TradingChartController extends ChangeNotifier {
 /// A tool is aimed with the mouse, a click placing each point. Below
 /// desktop width it is aimed with a cursor instead: it starts in the
 /// middle of the price pane, swipes anywhere move it by as much, a tap
-/// places the point under it, and it stays for the next point.
+/// places the point under it, and it stays for the next point. A polyline
+/// takes points until one is placed on the last — a double click, or a
+/// second tap without moving the cursor — or Enter is pressed.
 ///
 /// On desktop the chart takes focus on a click and answers the keyboard:
 /// Escape or a right click drops a half-placed drawing and the selection
@@ -109,6 +111,7 @@ class TradingChart extends StatefulWidget {
     this.onDrawingSelected,
     this.onDrawingDeleted,
     this.onDrawingCancelled,
+    this.styleDrawing,
     this.onNeedMoreHistory,
   });
 
@@ -170,7 +173,7 @@ class TradingChart extends StatefulWidget {
   /// The tool in hand: while set, clicks in the price pane — or taps, with
   /// the cursor, below desktop width — place its points, and
   /// [onDrawingCreated] is called with the drawing once the last one is
-  /// down. Nothing is selected or panned meanwhile.
+  /// down, or a polyline is finished. Nothing is selected or panned meanwhile.
   final ChartDrawingTool? activeTool;
 
   /// Whether a placed or dragged anchor snaps to the open, high, low or
@@ -197,6 +200,10 @@ class TradingChart extends StatefulWidget {
   /// Escape or a right click: the half-placed drawing and the selection are
   /// gone, and the host may put [activeTool] down.
   final VoidCallback? onDrawingCancelled;
+
+  /// The host's touch on a drawing the tool is placing, as it is previewed
+  /// and when it is created: its own default colour, width or style.
+  final ChartDrawing Function(ChartDrawing drawing)? styleDrawing;
 
   /// The view is nearing the oldest candle: the host may fetch what comes
   /// before it and pass a longer list. Called once per oldest candle.
@@ -225,6 +232,7 @@ class _TradingChartState extends State<TradingChart> {
       ..onDrawingSelected = widget.onDrawingSelected
       ..onDrawingDeleted = widget.onDrawingDeleted
       ..onDrawingCancelled = widget.onDrawingCancelled
+      ..styleDrawing = widget.styleDrawing
       ..onNeedMoreHistory = widget.onNeedMoreHistory;
   }
 
@@ -291,6 +299,8 @@ class _TradingChartState extends State<TradingChart> {
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts => {
     const SingleActivator(LogicalKeyboardKey.escape): _controller.cancelDrawing,
+    const SingleActivator(LogicalKeyboardKey.enter): _controller.finishDrawing,
+    const SingleActivator(LogicalKeyboardKey.numpadEnter): _controller.finishDrawing,
     const SingleActivator(LogicalKeyboardKey.delete): _controller.deleteSelectedDrawing,
     const SingleActivator(LogicalKeyboardKey.backspace): _controller.deleteSelectedDrawing,
     const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _controller.panByFraction(-0.1),

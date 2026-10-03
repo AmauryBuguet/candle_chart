@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import '../models/chart_candle.dart';
+import '../models/chart_indicator.dart';
+import 'calendar.dart';
 
 /// The simple average of the last [period] closes, `null` until that many
 /// have accrued.
@@ -263,6 +265,81 @@ List<({double value, bool up})?> superTrend(List<ChartCandle> candles, int perio
     result[i] = (value: up ? lower : upper, up: up);
   }
   return result;
+}
+
+/// The current period's levels, from the index of its first candle among
+/// [candles] on: [ChartPeriodLevels.previous] and [ChartPeriodLevels.current]
+/// where they are the right periods, the current range carried on by the
+/// candles since, and otherwise what the candles cover in full. `null` with
+/// no candles, or on candles as long as the period.
+({int from, double? previousHigh, double? previousLow, double? open, double? high, double? low})? periodLevels(
+  List<ChartCandle> candles,
+  ChartPeriodLevels indicator,
+) {
+  if (candles.isEmpty) return null;
+  final period = indicator.period;
+  final intervalMs = candles.first.endTimestamp - candles.first.timestamp;
+  if (intervalMs >= period.shortest.inMilliseconds) return null;
+
+  final start = period.startOf(candles.last.timestamp);
+  final previousStart = period.previousStart(start);
+  final from = candles.indexWhere((c) => c.timestamp >= start);
+  final current = indicator.current?.start == start ? indicator.current : null;
+  final previous = indicator.previous?.start == previousStart ? indicator.previous : null;
+
+  double? high = current?.high;
+  double? low = current?.low;
+  for (final candle in candles.skip(from)) {
+    high = max(high ?? candle.high, candle.high);
+    low = min(low ?? candle.low, candle.low);
+  }
+  final open = current?.open ?? (candles.first.timestamp <= start ? candles[from].open : null);
+
+  double? previousHigh = previous?.high;
+  double? previousLow = previous?.low;
+  if (previous == null && candles.first.timestamp <= previousStart) {
+    for (final candle in candles.take(from)) {
+      if (candle.timestamp < previousStart) continue;
+      previousHigh = max(previousHigh ?? candle.high, candle.high);
+      previousLow = min(previousLow ?? candle.low, candle.low);
+    }
+  }
+  return (from: from, previousHigh: previousHigh, previousLow: previousLow, open: open, high: high, low: low);
+}
+
+/// Each session's range on every weekday the candles wholly cover it, on
+/// candles of an hour or less: its hours, and the high and low of the
+/// candles opening within them. The live session's range is so far.
+List<({MarketSession session, int start, int end, double high, double low})> sessionRanges(List<ChartCandle> candles) {
+  final ranges = <({MarketSession session, int start, int end, double high, double low})>[];
+  if (candles.isEmpty) return ranges;
+  final intervalMs = candles.first.endTimestamp - candles.first.timestamp;
+  if (intervalMs > Duration.millisecondsPerHour) return ranges;
+
+  const dayMs = Duration.millisecondsPerDay;
+  final first = candles.first.timestamp;
+  var i = 0;
+  for (var day = first - first % dayMs; day <= candles.last.timestamp; day += dayMs) {
+    // Every session falls within one UTC day, so its date is the UTC one.
+    if (DateTime.fromMillisecondsSinceEpoch(day, isUtc: true).weekday > DateTime.friday) continue;
+    for (final session in MarketSession.values) {
+      final (:start, :end) = sessionHours(session, day);
+      if (start < first) continue;
+      // Sessions open in order, so the first candle of each lies further on.
+      while (i < candles.length && candles[i].timestamp < start) {
+        i++;
+      }
+      double? high;
+      double? low;
+      for (var k = i; k < candles.length && candles[k].timestamp < end; k++) {
+        high = max(high ?? candles[k].high, candles[k].high);
+        low = min(low ?? candles[k].low, candles[k].low);
+      }
+      if (high == null || low == null) continue;
+      ranges.add((session: session, start: start, end: end, high: high, low: low));
+    }
+  }
+  return ranges;
 }
 
 List<double?> _midpoint(List<ChartCandle> candles, int period) {

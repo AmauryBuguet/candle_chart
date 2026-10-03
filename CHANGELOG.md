@@ -1,3 +1,13 @@
+## 0.9.0
+
+* `ChartAtr`: Wilder's average true range, in a pane of its own.
+* `ChartPeriodLevels`: the current day's, week's or month's levels — the previous period's high and low, the current one's open, high and low — from the period's start to the last candle, each labelled at its right end where the label fits; the host may pass both periods' ranges (`ChartPeriodRange`) when the candles do not reach back that far. `ChartLevelPeriod` gives a period's start and its neighbours', in UTC.
+* `ChartSessions`: the Asian, London and New York sessions as boxes spanning each one's high and low, on candles of an hour or less, daylight saving included.
+* `ChartFibLevel`: each level of a Fibonacci retracement or extension can be hidden or given its own colour (`levels`, defaulting to `defaultLevels`, carried by `toJson`); `ChartColors.fibLevels` sets the colour a new drawing's level of each ratio is created in.
+* The colours of `ChartIchimoku`, `ChartSuperTrend`, `ChartMacd`, `ChartStochastic`, `ChartPeriodLevels` and `ChartSessions` are nullable: a line, a side or a session with none is not drawn.
+* `TradingChart.styleDrawing`: the host styles a drawing the tool is placing, on its preview and once created, with its own defaults.
+* `ChartPolyline` and `ChartDrawingTool.polyline`: segments through any number of points, placed until one lands on the last or Enter is pressed (`ChartDrawingTool.open`).
+
 ## 0.8.0
 
 * A rectangle has a handle in the middle of each side, which moves that side alone.

@@ -37,6 +37,7 @@ List<ChartDrawing> _everyKind() {
     ChartText(id: 10, points: [c], color: Colors.blue, text: 'note', selected: false),
     ChartMeasure(id: 11, points: [a, b], color: Colors.blue),
     ChartFibExtension(id: 12, points: [a, b, c], color: Colors.blue),
+    ChartPolyline(id: 13, points: [a, c, b], color: Colors.blue, selected: true),
   ];
 }
 
@@ -273,6 +274,33 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('Enter finishes a polyline with the points placed so far', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _PlacingHost(onSelected: (_) {}, tool: ChartDrawingTool.polyline),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final at in const [Offset(300, 300), Offset(500, 450), Offset(700, 350)]) {
+      await tester.tapAt(at);
+      await tester.pump();
+    }
+    expect(tester.widget<TradingChart>(find.byType(TradingChart)).drawings, isEmpty);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    final chart = tester.widget<TradingChart>(find.byType(TradingChart));
+    expect(chart.drawings.single, isA<ChartPolyline>().having((d) => d.points.length, 'points', 3));
+    expect(chart.activeTool, isNull);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('Shift held on the second click levels the line with the first point', (tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
@@ -324,16 +352,17 @@ void main() {
 }
 
 class _PlacingHost extends StatefulWidget {
-  const _PlacingHost({required this.onSelected});
+  const _PlacingHost({required this.onSelected, this.tool = ChartDrawingTool.trendLine});
 
   final void Function(Object? id) onSelected;
+  final ChartDrawingTool tool;
 
   @override
   State<_PlacingHost> createState() => _PlacingHostState();
 }
 
 class _PlacingHostState extends State<_PlacingHost> {
-  ChartDrawingTool? _tool = ChartDrawingTool.trendLine;
+  late ChartDrawingTool? _tool = widget.tool;
   List<ChartDrawing> _drawings = const [];
 
   @override

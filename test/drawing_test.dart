@@ -187,6 +187,31 @@ void main() {
       expect(second.$2.dy, closeTo(55, 1e-9));
     });
 
+    test('a polyline joins its points in order, each a handle', () {
+      const line = ChartPolyline(
+        id: 1,
+        points: [
+          Coordinates(timestamp: 10, price: 10),
+          Coordinates(timestamp: 50, price: 50),
+          Coordinates(timestamp: 90, price: 20),
+        ],
+        color: Color(0xFF000000),
+      );
+      final p = _projection();
+      expect(drawingSegments(line, p), [
+        (const Offset(10, 90), const Offset(50, 50)),
+        (const Offset(50, 50), const Offset(90, 80)),
+      ]);
+      expect(hitTestDrawing(line, const Offset(70, 65), p, handles: false), isNotNull);
+      expect(hitTestDrawing(line, const Offset(10, 50), p, handles: false), isNull);
+      expect(hitTestDrawing(line, const Offset(90, 80), p, handles: true)!.anchor, 2);
+      expect(
+        movedAnchor(line, 1, const Coordinates(timestamp: 60, price: 40))[1],
+        const Coordinates(timestamp: 60, price: 40),
+      );
+      expect(ChartDrawing.fromJson(line.toJson()).points, line.points);
+    });
+
     test('a horizontal line spans the pane at its price', () {
       const h = ChartHorizontalLine(
         id: 'h',
@@ -202,14 +227,57 @@ void main() {
         points: points,
         color: Colors.blue,
       );
-      final segments = drawingSegments(fib, projection);
-      expect(segments, hasLength(fibLevels.length));
-      expect(fibLevels.first, 0);
-      expect(segments.first.$1.dy, 50);
-      expect(segments.last.$1.dy, 10);
-      expect(segments[3].$1.dy, 30);
+      final lines = fibLevelLines(fib, projection);
+      expect(drawingSegments(fib, projection), isEmpty);
+      expect(lines, hasLength(ChartFibRetracement.defaultLevels.length));
+      expect(lines.first.$3.ratio, 0);
+      expect(lines.first.$1.dy, 50);
+      expect(lines.last.$1.dy, 10);
+      expect(lines[3].$1.dy, 30);
       expect(fibPrice(points, 1), 90);
       expect(fibPrice(points, 0), 50);
+    });
+
+    test('a new fibonacci drawing colours its levels by ratio, the same in both kinds', () {
+      const colors = [ChartFibLevel(0.618, color: Color(0xFF00FF00)), ChartFibLevel(1, color: Color(0xFF0000FF))];
+      final retracement =
+          ChartDrawingTool.fibRetracement.create(id: 'r', points: points, color: Colors.blue, fibLevels: colors)
+              as ChartFibRetracement;
+      final extension =
+          ChartDrawingTool.fibExtension.create(
+                id: 'x',
+                points: [...points, const Coordinates(timestamp: 30, price: 70)],
+                color: Colors.blue,
+                fibLevels: colors,
+              )
+              as ChartFibExtension;
+      Color? colorOf(List<ChartFibLevel> levels, double ratio) => levels.firstWhere((l) => l.ratio == ratio).color;
+      expect(colorOf(retracement.levels, 0.618), const Color(0xFF00FF00));
+      expect(colorOf(retracement.levels, 1), const Color(0xFF0000FF));
+      expect(colorOf(extension.levels, 1), const Color(0xFF0000FF));
+      // Ratios with no colour of their own follow the drawing's.
+      expect(colorOf(retracement.levels, 0.5), isNull);
+    });
+
+    test('a hidden fibonacci level is neither drawn nor hit; its colour and visibility survive JSON', () {
+      final levels = [...ChartFibRetracement.defaultLevels];
+      levels[3] = levels[3].copyWith(visible: false);
+      levels[4] = levels[4].copyWith(color: const Color(0xFFFF0000));
+      final fib = ChartFibRetracement(id: 'f', points: points, color: Colors.blue, levels: levels);
+      final lines = fibLevelLines(fib, projection);
+      expect(lines.map((l) => l.$3.ratio), isNot(contains(0.5)));
+      expect(lines, hasLength(levels.length - 1));
+      // The 0.5 level sits at y 30.
+      const exact = DrawingHitTolerance(stroke: 1, handle: 1);
+      expect(hitTestDrawing(fib, const Offset(30, 30), projection, handles: false, tolerance: exact), isNull);
+      expect(hitTestDrawing(fib, const Offset(30, 50), projection, handles: false, tolerance: exact), isNotNull);
+
+      final back = ChartDrawing.fromJson(fib.toJson()) as ChartFibRetracement;
+      expect(back.levels, levels);
+      expect(back.levels[4].color, const Color(0xFFFF0000));
+      // A drawing saved before levels were kept reads back with the defaults.
+      final legacy = fib.toJson()..remove('levels');
+      expect((ChartDrawing.fromJson(legacy) as ChartFibRetracement).levels, ChartFibRetracement.defaultLevels);
     });
 
     test('fibonacci extension projects the first move from the third point, levels running to the right edge', () {
@@ -223,11 +291,11 @@ void main() {
       expect(fibExtensionPrice(fib.points, 1), 30);
       expect(fibExtensionPrice(fib.points, 1.618), closeTo(5.28, 1e-9));
       final segments = drawingSegments(fib, projection);
-      expect(segments, hasLength(2 + fibExtensionLevels.length));
-      expect(segments[0], (const Offset(10, 10), const Offset(50, 50)));
-      expect(segments[1], (const Offset(50, 50), const Offset(30, 30)));
-      expect(segments[2], (const Offset(30, 30), const Offset(100, 30)));
-      expect(segments[3].$1.dy, 70);
+      final lines = fibLevelLines(fib, projection);
+      expect(segments, [(const Offset(10, 10), const Offset(50, 50)), (const Offset(50, 50), const Offset(30, 30))]);
+      expect(lines, hasLength(ChartFibExtension.defaultLevels.length));
+      expect((lines[0].$1, lines[0].$2), (const Offset(30, 30), const Offset(100, 30)));
+      expect(lines[1].$1.dy, 70);
       expect(drawingAnchors(fib, projection), hasLength(3));
       expect(hitTestDrawing(fib, const Offset(80, 31), projection, handles: false), isNotNull);
       expect(hitTestDrawing(fib, const Offset(5, 31), projection, handles: false), isNull);
@@ -280,6 +348,62 @@ void main() {
       expect(created, isA<ChartTrendLine>());
       expect(created!.points[0].timestamp, lessThan(created!.points[1].timestamp));
       expect(controller.placingFor(_size), isNull);
+    });
+
+    test("the host's style is on the preview and on the drawing created", () {
+      ChartDrawing? created;
+      final controller = _controller(tool: ChartDrawingTool.trendLine)
+        ..onDrawingCreated = ((d) => created = d)
+        ..styleDrawing = ((d) => d.copyWith(width: 3, lineStyle: ChartLineStyle.dashed));
+      final rect = controller.layoutFor(_size).priceRect;
+
+      void click(Offset at) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the tool takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+
+      click(rect.center - const Offset(100, 0));
+      expect(controller.placingFor(_size)!.width, 3);
+      click(rect.center + const Offset(100, 0));
+      expect(created!.width, 3);
+      expect(created!.lineStyle, ChartLineStyle.dashed);
+    });
+
+    test('a polyline takes points until one lands on the last, or it is finished', () {
+      final created = <ChartDrawing>[];
+      final controller = _controller(tool: ChartDrawingTool.polyline)..onDrawingCreated = created.add;
+      final rect = controller.layoutFor(_size).priceRect;
+
+      void click(Offset at) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) => fail('the tool takes the click'),
+        onPointerDownOutsideChart: () {},
+      );
+
+      // A point on the only one so far neither doubles it nor finishes.
+      click(rect.center - const Offset(150, 0));
+      click(rect.center - const Offset(150, 0));
+      expect(controller.placingFor(_size)!.points, hasLength(2));
+      click(rect.center);
+      click(rect.center + const Offset(150, -50));
+      expect(created, isEmpty);
+      expect(controller.placingFor(_size)!.points, hasLength(4));
+
+      click(rect.center + const Offset(152, -48));
+      expect(created.single, isA<ChartPolyline>().having((d) => d.points.length, 'points', 3));
+      expect(controller.placingFor(_size), isNull);
+
+      click(rect.center - const Offset(100, 0));
+      controller.finishDrawing();
+      expect(created, hasLength(1));
+      click(rect.center);
+      controller.finishDrawing();
+      expect(created.last.points, hasLength(2));
     });
 
     test('a mouse held down after placing a point keeps aiming the next one', () {

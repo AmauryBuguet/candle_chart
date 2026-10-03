@@ -5,14 +5,15 @@ An independent, embeddable candlestick trading chart widget for Flutter.
 - Candlestick rendering with grid and axis labels.
 - Indicators, passed as a list of value objects and computed once per candle
   list: over the candles (`ChartSma`, `ChartEma`, `ChartWma`, `ChartVwap`,
-  `ChartBollinger`, `ChartIchimoku`, `ChartSuperTrend`, `ChartVolumeProfile`)
-  or in a pane of their own under the price pane, on their own value axis
-  (`ChartVolume`, `ChartRsi`, `ChartMacd`, `ChartStochastic`). Panes stack in
+  `ChartBollinger`, `ChartIchimoku`, `ChartSuperTrend`, `ChartVolumeProfile`,
+  `ChartPeriodLevels`, `ChartSessions`) or in a pane of their own under the
+  price pane, on their own value axis (`ChartVolume`, `ChartRsi`, `ChartMacd`,
+  `ChartStochastic`, `ChartAtr`). Panes stack in
   list order with a drag handle above each; `ChartTransform.panes` tells a
   host where they are.
 - Drawings (`ChartDrawing`): trend line, ray, extended line, horizontal
   line and ray, vertical line, rectangle, parallel channel, Fibonacci
-  retracement and extension, text and measure, anchored in time and price. The chart
+  retracement and extension, text, measure and polyline, anchored in time and price. The chart
   hit-tests, selects and drags them, snaps anchors to OHLC with the magnet,
   locks a point to the previous one's time or price while Shift is held,
   places new ones with `activeTool`, and reports every change back through
@@ -21,7 +22,7 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   logarithmic price axis (`ChartViewConfig.logScale`).
 - Pan (drag), wheel zoom, pinch zoom, double-tap to reset/anchor the price
   axis, and on desktop the keyboard: arrows pan, plus and minus zoom, Home
-  jumps to live, Escape and Delete act on drawings.
+  jumps to live, Escape, Enter and Delete act on drawings.
 - `onNeedMoreHistory`: told the oldest candle's timestamp when the view
   nears it, once, so the host can fetch what comes before.
 - Optional crosshair with time/price labels on hover.

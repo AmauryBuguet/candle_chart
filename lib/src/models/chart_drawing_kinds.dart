@@ -307,7 +307,23 @@ class ChartFibRetracement extends ChartDrawing {
     super.selected,
     super.locked,
     super.hidden,
+    this.levels = defaultLevels,
   });
+
+  /// The ratios a new one shows: 1 on the first point's price, 0 on the
+  /// second's.
+  static const defaultLevels = [
+    ChartFibLevel(0),
+    ChartFibLevel(0.236),
+    ChartFibLevel(0.382),
+    ChartFibLevel(0.5),
+    ChartFibLevel(0.618),
+    ChartFibLevel(0.786),
+    ChartFibLevel(1),
+  ];
+
+  /// Its levels, each shown or not and in its own colour or the drawing's.
+  final List<ChartFibLevel> levels;
 
   @override
   ChartDrawingTool get tool => ChartDrawingTool.fibRetracement;
@@ -321,6 +337,7 @@ class ChartFibRetracement extends ChartDrawing {
     bool? selected,
     bool? locked,
     bool? hidden,
+    List<ChartFibLevel>? levels,
   }) => ChartFibRetracement(
     id: id,
     points: points ?? this.points,
@@ -330,7 +347,11 @@ class ChartFibRetracement extends ChartDrawing {
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
     hidden: hidden ?? this.hidden,
+    levels: levels ?? this.levels,
   );
+
+  @override
+  List<Object?> get props => [...super.props, levels];
 }
 
 /// Trend-based Fibonacci extension: the move from the first point to the
@@ -346,7 +367,22 @@ class ChartFibExtension extends ChartDrawing {
     super.selected,
     super.locked,
     super.hidden,
+    this.levels = defaultLevels,
   });
+
+  /// The ratios a new one shows: 0 on the third point's price, 1 a whole
+  /// first-to-second move away from it.
+  static const defaultLevels = [
+    ChartFibLevel(0),
+    ChartFibLevel(1),
+    ChartFibLevel(1.618),
+    ChartFibLevel(2.618),
+    ChartFibLevel(3.618),
+    ChartFibLevel(4.236),
+  ];
+
+  /// Its levels, each shown or not and in its own colour or the drawing's.
+  final List<ChartFibLevel> levels;
 
   @override
   ChartDrawingTool get tool => ChartDrawingTool.fibExtension;
@@ -360,6 +396,7 @@ class ChartFibExtension extends ChartDrawing {
     bool? selected,
     bool? locked,
     bool? hidden,
+    List<ChartFibLevel>? levels,
   }) => ChartFibExtension(
     id: id,
     points: points ?? this.points,
@@ -369,7 +406,11 @@ class ChartFibExtension extends ChartDrawing {
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
     hidden: hidden ?? this.hidden,
+    levels: levels ?? this.levels,
   );
+
+  @override
+  List<Object?> get props => [...super.props, levels];
 }
 
 /// A box between two points labelled with the change in price and percent, the bars and the time it spans.
@@ -453,4 +494,41 @@ class ChartText extends ChartDrawing {
 
   @override
   List<Object?> get props => [...super.props, text];
+}
+
+/// Segments joining its points one after the other, as many as were placed.
+class ChartPolyline extends ChartDrawing {
+  const ChartPolyline({
+    required super.id,
+    required super.points,
+    required super.color,
+    super.width,
+    super.lineStyle,
+    super.selected,
+    super.locked,
+    super.hidden,
+  });
+
+  @override
+  ChartDrawingTool get tool => ChartDrawingTool.polyline;
+
+  @override
+  ChartPolyline copyWith({
+    List<Coordinates>? points,
+    Color? color,
+    double? width,
+    ChartLineStyle? lineStyle,
+    bool? selected,
+    bool? locked,
+    bool? hidden,
+  }) => ChartPolyline(
+    id: id,
+    points: points ?? this.points,
+    color: color ?? this.color,
+    width: width ?? this.width,
+    lineStyle: lineStyle ?? this.lineStyle,
+    selected: selected ?? this.selected,
+    locked: locked ?? this.locked,
+    hidden: hidden ?? this.hidden,
+  );
 }
