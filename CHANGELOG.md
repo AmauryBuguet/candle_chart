@@ -1,3 +1,7 @@
+## 0.10.0
+
+* `ChartStyle.studyOpacity`: the price pane's overlay indicators, volume profile and drawings at a lower opacity, so a host's own objects stand out; a drawing being placed stays opaque.
+
 ## 0.9.0
 
 * `ChartAtr`: Wilder's average true range, in a pane of its own.

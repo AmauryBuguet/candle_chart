@@ -18,6 +18,7 @@ class ChartStyle extends Equatable {
     this.grid = true,
     this.filledUpCandles = false,
     this.filledDownCandles = false,
+    this.studyOpacity = 1,
     this.colors = const ChartColors(),
     this.labelStyle = const ChartLabelStyle(),
   });
@@ -37,6 +38,11 @@ class ChartStyle extends Equatable {
   /// Whether a down candle's body is filled rather than left hollow.
   final bool filledDownCandles;
 
+  /// The opacity of the price pane's studies — overlay indicators, the
+  /// volume profile and drawings — so a host can set them back behind its
+  /// own objects. A drawing being placed stays opaque.
+  final double studyOpacity;
+
   /// The color configuration for the chart.
   final ChartColors colors;
 
@@ -50,6 +56,7 @@ class ChartStyle extends Equatable {
     bool? grid,
     bool? filledUpCandles,
     bool? filledDownCandles,
+    double? studyOpacity,
     ChartColors? colors,
     ChartLabelStyle? labelStyle,
   }) {
@@ -59,6 +66,7 @@ class ChartStyle extends Equatable {
       grid: grid ?? this.grid,
       filledUpCandles: filledUpCandles ?? this.filledUpCandles,
       filledDownCandles: filledDownCandles ?? this.filledDownCandles,
+      studyOpacity: studyOpacity ?? this.studyOpacity,
       colors: colors ?? this.colors,
       labelStyle: labelStyle ?? this.labelStyle,
     );
@@ -73,5 +81,6 @@ class ChartStyle extends Equatable {
     labelStyle,
     filledUpCandles,
     filledDownCandles,
+    studyOpacity,
   ];
 }

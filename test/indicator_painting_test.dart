@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trading_chart/src/painter/chart_painter.dart';
 import 'package:trading_chart/trading_chart.dart';
 
 List<ChartCandle> _candles() {
@@ -23,6 +24,7 @@ Future<void> _pumpChart(
   List<ChartIndicator> indicators, {
   List<ChartCandle>? candles,
   Duration interval = const Duration(minutes: 1),
+  ChartStyle style = const ChartStyle(),
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -32,7 +34,7 @@ Future<void> _pumpChart(
           lines: const [],
           orderLines: const [],
           positions: const [],
-          style: const ChartStyle(),
+          style: style,
           indicators: indicators,
           interval: interval,
           viewConfig: const ChartViewConfig(),
@@ -50,6 +52,18 @@ Future<void> _pumpChart(
 }
 
 void main() {
+  testWidgets('studies are painted in a translucent layer only below full opacity', (tester) async {
+    final chart = find.byWidgetPredicate((w) => w is CustomPaint && w.painter is ChartPainter);
+    const ema = [ChartEma(period: 5, color: Colors.blue)];
+    final layer = paints..something((method, _) => method == #saveLayer);
+
+    await _pumpChart(tester, ema);
+    expect(chart, isNot(layer));
+
+    await _pumpChart(tester, ema, style: const ChartStyle(studyOpacity: 0.4));
+    expect(chart, layer);
+  });
+
   testWidgets('every overlay paints without error, including one longer than the data', (tester) async {
     await _pumpChart(tester, const [
       ChartSma(period: 5, color: Colors.blue),

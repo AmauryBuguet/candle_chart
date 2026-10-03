@@ -124,11 +124,13 @@ class ChartPainter extends CustomPainter {
     _drawValueAxis(canvas, chartRect, priceAxis, formatPrice, logScale: logScale);
     final dateFormat = _drawTimeAxis(canvas);
 
-    for (final (overlay, _) in overlays) {
-      if (overlay is ChartVolumeProfile) {
-        _drawVPVR(canvas, chartRect, firstIndex, effectiveEndIndex, overlay);
+    _dimmed(canvas, () {
+      for (final (overlay, _) in overlays) {
+        if (overlay is ChartVolumeProfile) {
+          _drawVPVR(canvas, chartRect, firstIndex, effectiveEndIndex, overlay);
+        }
       }
-    }
+    });
 
     if (style.chartType == ChartType.line) {
       _drawCloseLine(canvas, chartRect, firstIndex, effectiveEndIndex);
@@ -138,17 +140,20 @@ class ChartPainter extends CustomPainter {
 
     // Studies sit over the candles but under the trade objects.
     final intervalMs = candles.isEmpty ? 1 : candles.first.endTimestamp - candles.first.timestamp;
-    SeriesPainter(
-      canvas: canvas,
-      rect: chartRect,
-      candles: candles,
-      firstIndex: firstIndex,
-      endIndex: effectiveEndIndex,
-      intervalMs: intervalMs,
-      xForTime: (t) => _getXPositionFromTime(t, chartRect),
-      yForValue: (v) => _getYPositionFromPrice(v, chartRect),
-      textStyle: style.labelStyle.textStyle,
-    ).draw(_combinedOverlays());
+    _dimmed(
+      canvas,
+      () => SeriesPainter(
+        canvas: canvas,
+        rect: chartRect,
+        candles: candles,
+        firstIndex: firstIndex,
+        endIndex: effectiveEndIndex,
+        intervalMs: intervalMs,
+        xForTime: (t) => _getXPositionFromTime(t, chartRect),
+        yForValue: (v) => _getYPositionFromPrice(v, chartRect),
+        textStyle: style.labelStyle.textStyle,
+      ).draw(_combinedOverlays()),
+    );
 
     // Draw lines (e.g. draft entry/SL/TP lines)
     _drawLines(canvas, chartRect);
@@ -169,9 +174,11 @@ class ChartPainter extends CustomPainter {
         handleFill: style.colors.background,
         handleSpot: handleSpot,
       );
-      for (final drawing in drawings) {
-        painter.draw(drawing);
-      }
+      _dimmed(canvas, () {
+        for (final drawing in drawings) {
+          painter.draw(drawing);
+        }
+      });
       if (placing != null) painter.draw(placing!);
     }
 
@@ -199,6 +206,16 @@ class ChartPainter extends CustomPainter {
     if (position != null && (style.crosshair || crosshairArmed) && layout.plotRect.contains(position)) {
       _drawCrosshair(canvas, position, candles.firstOrNull, dateFormat, chartRect);
     }
+  }
+
+  /// Paints [paint] at [ChartStyle.studyOpacity], as one layer so crossing
+  /// strokes do not darken where they overlap.
+  void _dimmed(Canvas canvas, VoidCallback paint) {
+    final opacity = style.studyOpacity;
+    if (opacity >= 1) return paint();
+    canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, opacity));
+    paint();
+    canvas.restore();
   }
 
   /// The price pane's mapping, for drawing geometry.
