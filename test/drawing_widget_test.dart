@@ -44,6 +44,7 @@ List<ChartDrawing> _everyKind() {
 Future<void> _pump(
   WidgetTester tester, {
   List<ChartDrawing> drawings = const [],
+  String? view,
   ChartStyle style = const ChartStyle(),
   void Function(Object? id)? onSelected,
   void Function(Object id)? onDeleted,
@@ -63,6 +64,7 @@ Future<void> _pump(
           positions: const [],
           style: style,
           drawings: drawings,
+          view: view,
           interval: const Duration(minutes: 1),
           viewConfig: const ChartViewConfig(),
           viewResetKey: 'BTC',
@@ -153,6 +155,19 @@ void main() {
     expect(selected, [null, null]);
     expect(cancelled, 1);
     // The tap armed the double-tap timer; let it lapse.
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a drawing kept out of the view is left out: its selection answers no Delete', (tester) async {
+    final deleted = <Object>[];
+    final line = _everyKind().first.copyWith(hiddenIn: {'1m'});
+    await _pump(tester, drawings: [line], view: '1m', onSelected: (_) {}, onDeleted: deleted.add);
+
+    await tester.tapAt(const Offset(1200, 40));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pump();
+    expect(deleted, isEmpty);
     await tester.pumpAndSettle();
   });
 

@@ -227,7 +227,6 @@ DrawingHit? hitTestDrawing(
   Size Function(ChartText text)? textSize,
   Coordinates? handleAt,
 }) {
-  if (drawing.hidden) return null;
   final anchors = drawingAnchors(drawing, p, handleAt: handleAt);
   if (handles) {
     for (var i = 0; i < anchors.length; i++) {

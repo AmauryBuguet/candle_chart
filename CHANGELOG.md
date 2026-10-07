@@ -1,3 +1,7 @@
+## 0.11.0
+
+* `ChartDrawing.hiddenIn` replaces `hidden`: the host's views a drawing is kept out of, carried by `toJson`; `TradingChart.view` names the one shown, and the drawings hidden in it are neither drawn nor hit.
+
 ## 0.10.1
 
 * A drawing's point shows on the candle that holds its time, so one set on a finer interval no longer slides onto the next candle.

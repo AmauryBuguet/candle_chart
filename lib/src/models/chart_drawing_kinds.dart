@@ -10,7 +10,7 @@ class ChartTrendLine extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -24,7 +24,7 @@ class ChartTrendLine extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartTrendLine(
     id: id,
     points: points ?? this.points,
@@ -33,7 +33,7 @@ class ChartTrendLine extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -47,7 +47,7 @@ class ChartRay extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -61,7 +61,7 @@ class ChartRay extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartRay(
     id: id,
     points: points ?? this.points,
@@ -70,7 +70,7 @@ class ChartRay extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -84,7 +84,7 @@ class ChartExtendedLine extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -98,7 +98,7 @@ class ChartExtendedLine extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartExtendedLine(
     id: id,
     points: points ?? this.points,
@@ -107,7 +107,7 @@ class ChartExtendedLine extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -121,7 +121,7 @@ class ChartHorizontalLine extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -135,7 +135,7 @@ class ChartHorizontalLine extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartHorizontalLine(
     id: id,
     points: points ?? this.points,
@@ -144,7 +144,7 @@ class ChartHorizontalLine extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -158,7 +158,7 @@ class ChartHorizontalRay extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -172,7 +172,7 @@ class ChartHorizontalRay extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartHorizontalRay(
     id: id,
     points: points ?? this.points,
@@ -181,7 +181,7 @@ class ChartHorizontalRay extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -195,7 +195,7 @@ class ChartVerticalLine extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -209,7 +209,7 @@ class ChartVerticalLine extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartVerticalLine(
     id: id,
     points: points ?? this.points,
@@ -218,7 +218,7 @@ class ChartVerticalLine extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -232,7 +232,7 @@ class ChartRectangle extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -246,7 +246,7 @@ class ChartRectangle extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartRectangle(
     id: id,
     points: points ?? this.points,
@@ -255,7 +255,7 @@ class ChartRectangle extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -269,7 +269,7 @@ class ChartParallelChannel extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -283,7 +283,7 @@ class ChartParallelChannel extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartParallelChannel(
     id: id,
     points: points ?? this.points,
@@ -292,7 +292,7 @@ class ChartParallelChannel extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -306,7 +306,7 @@ class ChartFibRetracement extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
     this.levels = defaultLevels,
   });
 
@@ -336,7 +336,7 @@ class ChartFibRetracement extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
     List<ChartFibLevel>? levels,
   }) => ChartFibRetracement(
     id: id,
@@ -346,7 +346,7 @@ class ChartFibRetracement extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
     levels: levels ?? this.levels,
   );
 
@@ -366,7 +366,7 @@ class ChartFibExtension extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
     this.levels = defaultLevels,
   });
 
@@ -395,7 +395,7 @@ class ChartFibExtension extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
     List<ChartFibLevel>? levels,
   }) => ChartFibExtension(
     id: id,
@@ -405,7 +405,7 @@ class ChartFibExtension extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
     levels: levels ?? this.levels,
   );
 
@@ -423,7 +423,7 @@ class ChartMeasure extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -437,7 +437,7 @@ class ChartMeasure extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartMeasure(
     id: id,
     points: points ?? this.points,
@@ -446,7 +446,7 @@ class ChartMeasure extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }
 
@@ -462,7 +462,7 @@ class ChartText extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   final String text;
@@ -478,7 +478,7 @@ class ChartText extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
     String? text,
   }) => ChartText(
     id: id,
@@ -489,7 +489,7 @@ class ChartText extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 
   @override
@@ -506,7 +506,7 @@ class ChartPolyline extends ChartDrawing {
     super.lineStyle,
     super.selected,
     super.locked,
-    super.hidden,
+    super.hiddenIn,
   });
 
   @override
@@ -520,7 +520,7 @@ class ChartPolyline extends ChartDrawing {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   }) => ChartPolyline(
     id: id,
     points: points ?? this.points,
@@ -529,6 +529,6 @@ class ChartPolyline extends ChartDrawing {
     lineStyle: lineStyle ?? this.lineStyle,
     selected: selected ?? this.selected,
     locked: locked ?? this.locked,
-    hidden: hidden ?? this.hidden,
+    hiddenIn: hiddenIn ?? this.hiddenIn,
   );
 }

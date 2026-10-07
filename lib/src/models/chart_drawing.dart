@@ -26,7 +26,7 @@ sealed class ChartDrawing extends Equatable {
     this.lineStyle = ChartLineStyle.solid,
     this.selected = false,
     this.locked = false,
-    this.hidden = false,
+    this.hiddenIn = const {},
   });
 
   /// Identifies the drawing to the host; echoed back in every callback.
@@ -44,8 +44,9 @@ sealed class ChartDrawing extends Equatable {
   /// A locked drawing can be selected but not moved.
   final bool locked;
 
-  /// A hidden drawing is kept but not drawn nor hit.
-  final bool hidden;
+  /// The host's views it is kept out of — timeframes, say: in the one
+  /// `TradingChart.view` names it is neither drawn nor hit.
+  final Set<String> hiddenIn;
 
   /// Which tool makes this kind of drawing, and how many points it takes.
   ChartDrawingTool get tool;
@@ -57,7 +58,7 @@ sealed class ChartDrawing extends Equatable {
     ChartLineStyle? lineStyle,
     bool? selected,
     bool? locked,
-    bool? hidden,
+    Set<String>? hiddenIn,
   });
 
   Map<String, dynamic> toJson() => {
@@ -70,7 +71,7 @@ sealed class ChartDrawing extends Equatable {
     'width': width,
     'lineStyle': lineStyle.name,
     'locked': locked,
-    'hidden': hidden,
+    if (hiddenIn.isNotEmpty) 'hiddenIn': hiddenIn.toList(),
     if (this case ChartText(:final text)) 'text': text,
     if (this case ChartFibRetracement(:final levels) || ChartFibExtension(:final levels))
       'levels': [for (final level in levels) level.toJson()],
@@ -94,7 +95,7 @@ sealed class ChartDrawing extends Equatable {
       width: (json['width'] as num).toDouble(),
       lineStyle: ChartLineStyle.values.byName(json['lineStyle'] as String),
       locked: json['locked'] as bool,
-      hidden: json['hidden'] as bool,
+      hiddenIn: {for (final view in json['hiddenIn'] as List? ?? const []) view as String},
     );
     final levels = [
       for (final level in json['levels'] as List? ?? const []) ChartFibLevel.fromJson(level as Map<String, dynamic>),
@@ -108,7 +109,7 @@ sealed class ChartDrawing extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, points, color, width, lineStyle, selected, locked, hidden];
+  List<Object?> get props => [id, points, color, width, lineStyle, selected, locked, hiddenIn];
 }
 
 /// One level of a Fibonacci drawing: its ratio, whether it is drawn, and

@@ -84,12 +84,11 @@ void main() {
       expect(hitTestDrawing(line, const Offset(80, 80), projection, handles: false), isNull);
     });
 
-    test('a rectangle is hit on its edges, not inside, and a hidden one never', () {
+    test('a rectangle is hit on its edges, not inside', () {
       // Its corners are (10, 10) and (50, 50) on screen.
       const box = ChartRectangle(id: 'b', points: points, color: Colors.blue);
       expect(hitTestDrawing(box, const Offset(30, 12), projection, handles: false), isNotNull);
       expect(hitTestDrawing(box, const Offset(30, 30), projection, handles: false), isNull);
-      expect(hitTestDrawing(box.copyWith(hidden: true), const Offset(30, 12), projection, handles: false), isNull);
     });
 
     test('a rectangle has a handle on each corner and side; the derived corners move both points', () {
@@ -311,7 +310,7 @@ void main() {
       width: 2,
       lineStyle: ChartLineStyle.dashed,
       locked: true,
-      hidden: true,
+      hiddenIn: {'1h', '1d'},
       selected: true,
     );
     final back = ChartDrawing.fromJson(text.toJson());
@@ -322,7 +321,7 @@ void main() {
     expect(back.width, 2);
     expect(back.lineStyle, ChartLineStyle.dashed);
     expect(back.locked, isTrue);
-    expect(back.hidden, isTrue);
+    expect(back.hiddenIn, {'1h', '1d'});
     // Selection is not kept: it is what the user is doing, not what they drew.
     expect(back.selected, isFalse);
   });

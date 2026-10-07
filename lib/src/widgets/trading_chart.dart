@@ -103,6 +103,7 @@ class TradingChart extends StatefulWidget {
     this.onPriceAxisChanged,
     this.indicators = const [],
     this.drawings = const [],
+    this.view,
     this.activeTool,
     this.magnet = true,
     this.magnetReach = 30,
@@ -170,6 +171,10 @@ class TradingChart extends StatefulWidget {
   /// host replaces entries in this list.
   final List<ChartDrawing> drawings;
 
+  /// The host's view the chart shows — a timeframe, say: the drawings
+  /// whose `hiddenIn` holds it are left out.
+  final String? view;
+
   /// The tool in hand: while set, clicks in the price pane — or taps, with
   /// the cursor, below desktop width — place its points, and
   /// [onDrawingCreated] is called with the drawing once the last one is
@@ -220,9 +225,14 @@ class _TradingChartState extends State<TradingChart> {
   final FocusNode _focus = FocusNode(debugLabel: 'TradingChart');
   PriceAxis? _lastReportedPriceAxis;
 
+  List<ChartDrawing> get _drawings => [
+    for (final d in widget.drawings)
+      if (!d.hiddenIn.contains(widget.view)) d,
+  ];
+
   void _syncDrawingInputs() {
     _controller
-      ..drawings = widget.drawings
+      ..drawings = _drawings
       ..activeTool = widget.activeTool
       ..magnet = widget.magnet
       ..magnetReach = widget.magnetReach
@@ -447,7 +457,7 @@ class _TradingChartState extends State<TradingChart> {
                         panes: [for (final p in _controller.paneIndicators) (p, _controller.renderOf(p))],
                         paneAxes: _controller.paneAxes,
                         logScale: widget.viewConfig.logScale,
-                        drawings: widget.drawings,
+                        drawings: _drawings,
                         placing: _controller.placingFor(c.biggest),
                       ),
                     ),

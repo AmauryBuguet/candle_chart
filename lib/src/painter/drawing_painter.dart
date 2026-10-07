@@ -31,7 +31,6 @@ class DrawingPainter {
   final Coordinates? handleSpot;
 
   void draw(ChartDrawing drawing) {
-    if (drawing.hidden) return;
     canvas.save();
     canvas.clipRect(projection.rect);
 
