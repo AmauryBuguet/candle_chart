@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../internal/candle_time.dart';
 import '../internal/chart_layout.dart';
 import '../internal/drawing_geometry.dart';
 import '../internal/indicator_render.dart';
@@ -225,6 +226,7 @@ class ChartPainter extends CustomPainter {
     yForPrice: (p) => _getYPositionFromPrice(p, chartRect),
     timeForX: (x) => _getTimeFromXPosition(x: x, chartRect: chartRect, axis: timeAxis),
     priceForY: (y) => _getPriceFromYPosition(y: y, chartRect: chartRect, axis: priceAxis),
+    candleTime: (t) => candleTimeOf(t, candles),
   );
 
   /// Every overlay's series as one render, so fills go under every line

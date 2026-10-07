@@ -457,7 +457,7 @@ void main() {
       controller.drawings = [line];
       final projection = controller.projectionFor(_size);
       final spot = controller.handleSpotFor(_size)!;
-      expect(projection.offsetOf(spot).dx, closeTo(projection.rect.center.dx, 1));
+      expect(projection.xForTime(spot.timestamp), closeTo(projection.rect.center.dx, 1));
       expect(projection.offsetOf(spot).dy, closeTo(projection.rect.center.dy, 0.01));
       controller.drawings = [
         line.copyWith(points: [Coordinates(timestamp: _start, price: 104)]),

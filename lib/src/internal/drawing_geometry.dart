@@ -22,6 +22,7 @@ class DrawingProjection {
     required this.yForPrice,
     required this.timeForX,
     required this.priceForY,
+    this.candleTime = _sameTime,
   });
 
   final Rect rect;
@@ -30,7 +31,13 @@ class DrawingProjection {
   final int Function(double x) timeForX;
   final double Function(double y) priceForY;
 
-  Offset offsetOf(Coordinates c) => Offset(xForTime(c.timestamp), yForPrice(c.price));
+  /// The open time of the candle a point's time falls in: a drawing's
+  /// points are shown on the candle that holds them.
+  final int Function(int timestamp) candleTime;
+
+  static int _sameTime(int timestamp) => timestamp;
+
+  Offset offsetOf(Coordinates c) => Offset(xForTime(candleTime(c.timestamp)), yForPrice(c.price));
 
   Coordinates coordinatesOf(Offset o) => Coordinates(timestamp: timeForX(o.dx), price: priceForY(o.dy));
 }

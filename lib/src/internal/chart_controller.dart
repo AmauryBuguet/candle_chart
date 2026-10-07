@@ -13,6 +13,7 @@ import '../models/chart_label_style.dart';
 import '../models/chart_margins.dart';
 import '../models/chart_view_config.dart';
 import '../models/coordinates.dart';
+import 'candle_time.dart';
 import 'chart_layout.dart';
 import 'drawing_geometry.dart';
 import 'event_origin.dart';
@@ -225,6 +226,7 @@ class ChartController extends ChangeNotifier {
       yForPrice: (p) => yForPrice(p, priceAxis, rect, logScale: _viewConfig.logScale),
       timeForX: (x) => timeAxis.start + ((x - rect.left) / rect.width * timeAxis.range).round(),
       priceForY: (y) => priceForY(y, priceAxis, rect, logScale: _viewConfig.logScale),
+      candleTime: (t) => candleTimeOf(t, _candles),
     );
   }
 

@@ -1,3 +1,7 @@
+## 0.10.1
+
+* A drawing's point shows on the candle that holds its time, so one set on a finer interval no longer slides onto the next candle.
+
 ## 0.10.0
 
 * `ChartStyle.studyOpacity`: the price pane's overlay indicators, volume profile and drawings at a lower opacity, so a host's own objects stand out; a drawing being placed stays opaque.
