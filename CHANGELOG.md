@@ -1,3 +1,7 @@
+## 0.11.1
+
+* The time axis reads the time through `package:clock`, so a host's tests can say what time it is.
+
 ## 0.11.0
 
 * `ChartDrawing.hiddenIn` replaces `hidden`: the host's views a drawing is kept out of, carried by `toJson`; `TradingChart.view` names the one shown, and the drawings hidden in it are neither drawn nor hit.

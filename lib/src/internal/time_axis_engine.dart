@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import '../models/axis.dart';
 import '../models/chart_view_config.dart';
 
@@ -13,7 +14,7 @@ class TimeAxisEngine {
   late double _rightMargin;
 
   /// Whether the current window still shows the live edge of the market.
-  bool get isLive => axis.end >= DateTime.now().millisecondsSinceEpoch;
+  bool get isLive => axis.end >= clock.now().millisecondsSinceEpoch;
 
   void reset({required Duration interval, required ChartViewConfig viewConfig}) {
     _minRange = interval.inMilliseconds * viewConfig.minCandles;
@@ -26,7 +27,7 @@ class TimeAxisEngine {
   void jumpToLive() => _anchorToNow(axis.range);
 
   void _anchorToNow(int range) {
-    final end = DateTime.now().millisecondsSinceEpoch + (range * _rightMargin).round();
+    final end = clock.now().millisecondsSinceEpoch + (range * _rightMargin).round();
     axis = TimeAxis(start: end - range, end: end);
   }
 
