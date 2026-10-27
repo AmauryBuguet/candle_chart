@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/internal/indicator_compute.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/internal/indicator_compute.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 List<ChartCandle> _candles() => [
   for (var i = 0; i < 80; i++)

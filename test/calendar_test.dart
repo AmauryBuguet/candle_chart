@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/internal/calendar.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/internal/calendar.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 int _utc(int year, int month, int day, [int hour = 0]) => DateTime.utc(year, month, day, hour).millisecondsSinceEpoch;
 

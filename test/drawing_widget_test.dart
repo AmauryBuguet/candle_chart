@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/painter/chart_painter.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/painter/chart_painter.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 final _start = (DateTime.now().millisecondsSinceEpoch ~/ 60000 - 40) * 60000;
 

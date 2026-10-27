@@ -1,9 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/internal/chart_controller.dart';
-import 'package:trading_chart/src/internal/chart_layout.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/internal/chart_controller.dart';
+import 'package:candle_chart/src/internal/chart_layout.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 List<ChartCandle> _candles() {
   final start = DateTime.now().millisecondsSinceEpoch - 40 * 60000;

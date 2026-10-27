@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/internal/chart_controller.dart';
-import 'package:trading_chart/src/internal/price_axis_engine.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/internal/chart_controller.dart';
+import 'package:candle_chart/src/internal/price_axis_engine.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 List<ChartCandle> _candles(List<(double, double)> lowHighs, {int start = 0}) => [
   for (var i = 0; i < lowHighs.length; i++)

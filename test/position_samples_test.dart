@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/painter/position_samples.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/painter/position_samples.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 const int _minute = 60000;
 const int _half = _minute ~/ 2;

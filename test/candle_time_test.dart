@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:trading_chart/src/internal/candle_time.dart';
-import 'package:trading_chart/trading_chart.dart';
+import 'package:candle_chart/src/internal/candle_time.dart';
+import 'package:candle_chart/candle_chart.dart';
 
 const _day = 86400000;
 

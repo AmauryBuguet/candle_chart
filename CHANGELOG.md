@@ -1,3 +1,8 @@
+## 0.12.0
+
+* Renamed from `trading_chart` to `candle_chart` and published under the MIT licence; import `package:candle_chart/candle_chart.dart`.
+* An example app under `example/`, and screenshots in the README.
+
 ## 0.11.1
 
 * The time axis reads the time through `package:clock`, so a host's tests can say what time it is.

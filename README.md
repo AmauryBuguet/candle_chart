@@ -1,5 +1,11 @@
 An independent, embeddable candlestick trading chart widget for Flutter.
 
+![Drawings, moving averages, volume and RSI](screenshots/drawings_and_indicators.png)
+
+![Target, entry and stop lines over the candles](screenshots/price_lines.png)
+
+*As used in [Graphite](https://graphite.trade).*
+
 ## Features
 
 - Candlestick rendering with grid and axis labels.
@@ -43,6 +49,10 @@ app's domain.
 
 ## Usage
 
+```sh
+flutter pub add candle_chart
+```
+
 ```dart
 TradingChart(
   candles: candles,           // List<ChartCandle>
@@ -81,8 +91,16 @@ controller notifies on every view change and exposes `transform`
 
 ## Additional information
 
-Part of the Graphite workspace, shared by its trading and charting apps. `movable` on `ChartLine`/
-`ChartOrderLine` defaults to `true` and is currently unused by the chart's
-own gesture handling — it's a hook for hosts implementing a "lock this
-line/order" feature; enforcing it is the host's responsibility when
-hit-testing in `onPointerDownInChart`/`onDragUpdate`.
+`movable` on `ChartLine`/`ChartOrderLine` defaults to `true` and is currently
+unused by the chart's own gesture handling — it's a hook for hosts
+implementing a "lock this line/order" feature; enforcing it is the host's
+responsibility when hit-testing in `onPointerDownInChart`/`onDragUpdate`.
+
+A runnable example is in [`example/main.dart`](example/main.dart).
+
+This chart powers [Graphite](https://graphite.trade), charting and trading for
+every Hyperliquid market. Issues and pull requests are welcome.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
