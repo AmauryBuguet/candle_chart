@@ -1,6 +1,6 @@
 name: candle_chart
 description: "An independent, embeddable candlestick trading chart widget: pan/zoom, crosshair, draggable price lines, order overlays and position P&L shading."
-version: 0.12.0
+version: 0.12.1
 homepage: https://graphite.trade
 repository: https://github.com/AmauryBuguet/candle_chart
 issue_tracker: https://github.com/AmauryBuguet/candle_chart/issues
@@ -25,7 +25,7 @@ dependencies:
     sdk: flutter
   # Wall time behind an injectable clock, so a host's tests can say what time it is.
   clock: ^1.1.2
-  equatable: ^2.0.7
+  equatable: ">=2.0.7 <4.0.0"
   intl: ^0.20.2
   collection: ^1.19.1
 

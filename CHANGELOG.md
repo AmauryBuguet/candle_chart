@@ -1,3 +1,7 @@
+## 0.12.1
+
+* Accepts `equatable` 3.
+
 ## 0.12.0
 
 * Renamed from `trading_chart` to `candle_chart` and published under the MIT licence; import `package:candle_chart/candle_chart.dart`.
