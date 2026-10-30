@@ -1,3 +1,8 @@
+## 0.13.0
+
+* `ChartOrderBookProfile`: resting size per price from `ChartBookLevel`s the host supplies, bids and asks in their own colours, in the volume profile's rows and width.
+* `ChartProfileSide`: `ChartVolumeProfile` and `ChartOrderBookProfile` stand against the left or the right edge, right by default.
+
 ## 0.12.1
 
 * Accepts `equatable` 3.

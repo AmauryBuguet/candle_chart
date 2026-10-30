@@ -12,7 +12,8 @@ An independent, embeddable candlestick trading chart widget for Flutter.
 - Indicators, passed as a list of value objects and computed once per candle
   list: over the candles (`ChartSma`, `ChartEma`, `ChartWma`, `ChartVwap`,
   `ChartBollinger`, `ChartIchimoku`, `ChartSuperTrend`, `ChartVolumeProfile`,
-  `ChartPeriodLevels`, `ChartSessions`) or in a pane of their own under the
+  `ChartOrderBookProfile`, `ChartPeriodLevels`, `ChartSessions`; the two
+  profiles stand against either edge) or in a pane of their own under the
   price pane, on their own value axis (`ChartVolume`, `ChartRsi`, `ChartMacd`,
   `ChartStochastic`, `ChartAtr`). Panes stack in
   list order with a drag handle above each; `ChartTransform.panes` tells a

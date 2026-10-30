@@ -120,17 +120,56 @@ class ChartSuperTrend extends ChartOverlay {
   List<Object?> get props => [period, multiplier, upColor, downColor];
 }
 
+/// The edge of the price pane a profile stands against.
+enum ChartProfileSide { left, right }
+
 /// The visible-range volume profile: the visible candles' volume binned by
-/// price and drawn as a histogram against the right edge, the busiest bin
-/// (the point of control) in [pocColor].
+/// price and drawn as a histogram against [side], the busiest bin (the point
+/// of control) in [pocColor].
 class ChartVolumeProfile extends ChartOverlay {
-  const ChartVolumeProfile({required this.color, required this.pocColor});
+  const ChartVolumeProfile({required this.color, required this.pocColor, this.side = ChartProfileSide.right});
 
   final Color color;
   final Color pocColor;
+  final ChartProfileSide side;
 
   @override
-  List<Object> get props => [color, pocColor];
+  List<Object> get props => [color, pocColor, side];
+}
+
+/// The size resting between [low] and [high], spread evenly across them.
+class ChartBookLevel extends Equatable {
+  const ChartBookLevel({required this.low, required this.high, required this.size}) : assert(high >= low);
+
+  final double low;
+  final double high;
+  final double size;
+
+  @override
+  List<Object> get props => [low, high, size];
+}
+
+/// The order book as a profile: the size resting at each price, in the same
+/// rows and width as [ChartVolumeProfile], against [side]. Bids and asks are
+/// drawn translucent, so another profile on the same side shows through; a
+/// null colour leaves that side out.
+class ChartOrderBookProfile extends ChartOverlay {
+  const ChartOrderBookProfile({
+    required this.bids,
+    required this.asks,
+    required this.bidColor,
+    required this.askColor,
+    this.side = ChartProfileSide.right,
+  });
+
+  final List<ChartBookLevel> bids;
+  final List<ChartBookLevel> asks;
+  final Color? bidColor;
+  final Color? askColor;
+  final ChartProfileSide side;
+
+  @override
+  List<Object?> get props => [bids, asks, bidColor, askColor, side];
 }
 
 /// The calendar periods [ChartPeriodLevels] reads its levels from, in UTC:

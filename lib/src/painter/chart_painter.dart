@@ -29,6 +29,15 @@ import 'series_painter.dart';
 /// formatting/precision rule, which is entirely up to [ChartPainter.formatPrice].
 const int _maxTickCleanupDecimals = 8;
 
+/// The price rows a profile is binned into, over the visible price range.
+const int _profileRows = 100;
+
+/// A profile's widest bar, as a share of the price pane's width.
+const double _profileWidth = 0.30;
+
+/// How strongly the order book profile's colours show.
+const double _bookProfileOpacity = 0.4;
+
 /// An indicator with its computed series.
 typedef IndicatorEntry<T extends ChartIndicator> = (T indicator, IndicatorRender render);
 
@@ -129,6 +138,8 @@ class ChartPainter extends CustomPainter {
       for (final (overlay, _) in overlays) {
         if (overlay is ChartVolumeProfile) {
           _drawVPVR(canvas, chartRect, firstIndex, effectiveEndIndex, overlay);
+        } else if (overlay is ChartOrderBookProfile) {
+          _drawOrderBookProfile(canvas, chartRect, overlay);
         }
       }
     });
@@ -278,12 +289,12 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  /// Draws the Visible Range Volume Profile on the right side of the chart.
+  /// Draws the Visible Range Volume Profile against its side of the chart.
   void _drawVPVR(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex, ChartVolumeProfile profile) {
     if (firstIndex == -1 || effectiveEndIndex == -1 || priceAxis.range <= 0) return;
 
-    // 1. Setup Price Bins (e.g., 100 vertical rows)
-    const int binsCount = 100;
+    // 1. Setup Price Bins
+    const int binsCount = _profileRows;
     final double binPriceHeight = priceAxis.range / binsCount;
     if (binPriceHeight <= 0) return;
 
@@ -322,7 +333,7 @@ class ChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(chartRect);
 
-    final double maxBarWidth = chartRect.width * 0.30;
+    final double maxBarWidth = chartRect.width * _profileWidth;
 
     final Paint vpvrPaint = Paint()
       ..color = profile.color
@@ -338,7 +349,7 @@ class ChartPainter extends CustomPainter {
       final double yBottom = _getYPositionFromPrice(priceBottom, chartRect);
       final double yTop = _getYPositionFromPrice(priceTop, chartRect);
 
-      final Rect barRect = Rect.fromLTRB(chartRect.right - barWidth, yTop, chartRect.right, yBottom);
+      final Rect barRect = _profileBar(chartRect, profile.side, 0, barWidth, yTop, yBottom);
 
       canvas.drawRect(barRect, vpvrPaint);
     }
@@ -354,12 +365,7 @@ class ChartPainter extends CustomPainter {
       final double yTop = _getYPositionFromPrice(priceTop, chartRect);
 
       // Create a rectangle that spans the max bar width and matches the bin's exact height
-      final Rect pocRect = Rect.fromLTRB(
-        chartRect.right - maxBarWidth,
-        yTop,
-        chartRect.right,
-        yBottom,
-      );
+      final Rect pocRect = _profileBar(chartRect, profile.side, 0, maxBarWidth, yTop, yBottom);
 
       final Paint pocPaint = Paint()
         ..color = profile.pocColor
@@ -369,6 +375,77 @@ class ChartPainter extends CustomPainter {
 
     canvas.restore();
   }
+
+  /// Draws the order book profile: each level's size spread over the rows its
+  /// range covers, bids then asks stacked out from the profile's side.
+  void _drawOrderBookProfile(Canvas canvas, Rect chartRect, ChartOrderBookProfile profile) {
+    if (priceAxis.range <= 0) return;
+    final rowHeight = priceAxis.range / _profileRows;
+
+    List<double> rows(List<ChartBookLevel> levels) {
+      final sizes = List.filled(_profileRows, 0.0);
+      for (final level in levels) {
+        final span = level.high - level.low;
+        if (level.size <= 0) continue;
+        if (span <= 0) {
+          final row = ((level.low - priceAxis.start) / rowHeight).floor();
+          if (row >= 0 && row < _profileRows) sizes[row] += level.size;
+          continue;
+        }
+        final first = max(0, ((level.low - priceAxis.start) / rowHeight).floor());
+        final last = min(_profileRows - 1, ((level.high - priceAxis.start) / rowHeight).floor());
+        for (var row = first; row <= last; row++) {
+          final rowLow = priceAxis.start + row * rowHeight;
+          final overlap = min(level.high, rowLow + rowHeight) - max(level.low, rowLow);
+          if (overlap > 0) sizes[row] += level.size * overlap / span;
+        }
+      }
+      return sizes;
+    }
+
+    final bids = rows(profile.bidColor == null ? const [] : profile.bids);
+    final asks = rows(profile.askColor == null ? const [] : profile.asks);
+    var largest = 0.0;
+    for (var row = 0; row < _profileRows; row++) {
+      largest = max(largest, bids[row] + asks[row]);
+    }
+    if (largest == 0) return;
+
+    canvas.save();
+    canvas.clipRect(chartRect);
+    final maxWidth = chartRect.width * _profileWidth;
+    Paint? paintOf(Color? color) =>
+        color == null ? null : (Paint()..color = color.withValues(alpha: color.a * _bookProfileOpacity));
+    final bidPaint = paintOf(profile.bidColor);
+    final askPaint = paintOf(profile.askColor);
+    for (var row = 0; row < _profileRows; row++) {
+      if (bids[row] + asks[row] == 0) continue;
+      final rowLow = priceAxis.start + row * rowHeight;
+      final yBottom = _getYPositionFromPrice(rowLow, chartRect);
+      final yTop = _getYPositionFromPrice(rowLow + rowHeight, chartRect);
+      final bidWidth = bids[row] / largest * maxWidth;
+      final askWidth = asks[row] / largest * maxWidth;
+      if (bidPaint != null && bidWidth > 0) {
+        canvas.drawRect(_profileBar(chartRect, profile.side, 0, bidWidth, yTop, yBottom), bidPaint);
+      }
+      if (askPaint != null && askWidth > 0) {
+        canvas.drawRect(_profileBar(chartRect, profile.side, bidWidth, askWidth, yTop, yBottom), askPaint);
+      }
+    }
+    canvas.restore();
+  }
+
+  /// A profile's bar: [width] wide, starting [offset] in from [side].
+  Rect _profileBar(Rect chartRect, ChartProfileSide side, double offset, double width, double top, double bottom) =>
+      switch (side) {
+        ChartProfileSide.left => Rect.fromLTRB(chartRect.left + offset, top, chartRect.left + offset + width, bottom),
+        ChartProfileSide.right => Rect.fromLTRB(
+          chartRect.right - offset - width,
+          top,
+          chartRect.right - offset,
+          bottom,
+        ),
+      };
 
   void _drawOrderLines(Canvas canvas, Rect chartRect) {
     final dotPaint = Paint()

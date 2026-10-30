@@ -35,7 +35,7 @@ IndicatorRender renderIndicator(ChartIndicator indicator, List<ChartCandle> cand
     ),
     ChartPeriodLevels() => _periodLevels(candles, indicator),
     ChartSessions() => _sessions(candles, indicator),
-    ChartVolumeProfile() => const IndicatorRender(),
+    ChartVolumeProfile() || ChartOrderBookProfile() => const IndicatorRender(),
     ChartVolume() => _volume(candles, colors),
     ChartRsi(:final period, :final color, :final overbought, :final oversold) => IndicatorRender(
       series: [IndicatorSeries(values: relativeStrengthIndex(candles, period), color: color)],

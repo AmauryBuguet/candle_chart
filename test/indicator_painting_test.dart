@@ -64,6 +64,34 @@ void main() {
     expect(chart, layer);
   });
 
+  testWidgets('the order book profile draws bids and asks translucent against its side', (tester) async {
+    final chart = find.byWidgetPredicate((w) => w is CustomPaint && w.painter is ChartPainter);
+    const bid = Color(0xFF00AA00);
+    const ask = Color(0xFFAA0000);
+    ChartOrderBookProfile book(ChartProfileSide side) => ChartOrderBookProfile(
+      bids: const [ChartBookLevel(low: 110, high: 115, size: 10)],
+      asks: const [ChartBookLevel(low: 120, high: 121, size: 5)],
+      bidColor: bid,
+      askColor: ask,
+      side: side,
+    );
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    PaintPattern barIn(Color color, bool Function(Rect) where) => paints
+      ..something((method, args) {
+        if (method != #drawRect) return false;
+        final paint = args[1] as Paint;
+        return paint.color.toARGB32() == color.withValues(alpha: 0.4).toARGB32() && where(args[0] as Rect);
+      });
+
+    await _pumpChart(tester, [book(ChartProfileSide.left)]);
+    expect(chart, barIn(bid, (r) => r.right < width * 0.4));
+    expect(chart, barIn(ask, (r) => r.right < width * 0.4));
+
+    await _pumpChart(tester, [book(ChartProfileSide.right)]);
+    expect(chart, barIn(bid, (r) => r.left > width * 0.5));
+    expect(chart, isNot(barIn(bid, (r) => r.right < width * 0.4)));
+  });
+
   testWidgets('every overlay paints without error, including one longer than the data', (tester) async {
     await _pumpChart(tester, const [
       ChartSma(period: 5, color: Colors.blue),
@@ -81,6 +109,18 @@ void main() {
       ),
       ChartSuperTrend(upColor: Colors.green, downColor: Colors.red),
       ChartVolumeProfile(color: Colors.grey, pocColor: Colors.blue),
+      ChartVolumeProfile(color: Colors.grey, pocColor: Colors.blue, side: ChartProfileSide.left),
+      ChartOrderBookProfile(
+        bids: [
+          ChartBookLevel(low: 110, high: 115, size: 10),
+          ChartBookLevel(low: 108, high: 108, size: 2),
+          ChartBookLevel(low: 1, high: 1000, size: 50),
+        ],
+        asks: [ChartBookLevel(low: 120, high: 121, size: 5)],
+        bidColor: Colors.green,
+        askColor: null,
+      ),
+      ChartOrderBookProfile(bids: [], asks: [], bidColor: Colors.green, askColor: Colors.red),
       ChartPeriodLevels(
         period: ChartLevelPeriod.day,
         previousHighColor: Colors.green,
