@@ -216,7 +216,7 @@ class ChartPainter extends CustomPainter {
 
     final position = crosshairPosition;
     if (position != null && (style.crosshair || crosshairArmed) && layout.plotRect.contains(position)) {
-      _drawCrosshair(canvas, position, candles.firstOrNull, dateFormat, chartRect);
+      _drawCrosshair(canvas, position, dateFormat, chartRect);
     }
   }
 
@@ -811,7 +811,7 @@ class ChartPainter extends CustomPainter {
   }
 
   /// Draws the crosshair and its axis-aligned labels.
-  void _drawCrosshair(Canvas canvas, Offset position, ChartCandle? candle, String dateFormat, Rect chartRect) {
+  void _drawCrosshair(Canvas canvas, Offset position, String dateFormat, Rect chartRect) {
     final backgroundPaint = Paint()..color = style.colors.crosshairLabelBackground;
     final paint = Paint()
       ..color = crosshairArmed ? style.colors.cursor : style.colors.crosshair
@@ -819,11 +819,9 @@ class ChartPainter extends CustomPainter {
       ..strokeWidth = crosshairArmed ? 0.8 : 0.6;
 
     double dx = position.dx;
-    if (candle != null) {
-      final interval = candle.endTimestamp + 1 - candle.timestamp;
-      final time = _getTimeFromXPosition(x: dx, chartRect: chartRect, axis: timeAxis) + interval / 2;
-      final updatedTime = (time ~/ interval) * interval;
-      dx = _getXPositionFromTime(updatedTime, chartRect);
+    if (candles.isNotEmpty) {
+      final time = _getTimeFromXPosition(x: dx, chartRect: chartRect, axis: timeAxis);
+      dx = _getXPositionFromTime(nearestCandleTime(time, candles), chartRect);
     }
 
     drawDashedLine(

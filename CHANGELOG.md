@@ -1,3 +1,7 @@
+## 0.13.1
+
+* The crosshair and drawing points snap to the nearest candle's open, so they line up with candles of uneven length, such as calendar weeks and months.
+
 ## 0.13.0
 
 * `ChartOrderBookProfile`: resting size per price from `ChartBookLevel`s the host supplies, bids and asks in their own colours, in the volume profile's rows and width.

@@ -426,12 +426,12 @@ class ChartController extends ChangeNotifier {
         _aimed(now, size, from: _neighbourOf(drag.original, drag.anchor!)),
       );
     } else {
-      final dt = _onInterval(now.timestamp - drag.from.timestamp);
+      final dt = _onCandle(now.timestamp) - _onCandle(drag.from.timestamp);
       final ratio = _viewConfig.logScale && drag.from.price > 0 ? now.price / drag.from.price : null;
       final dp = now.price - drag.from.price;
       points = [
         for (final p in drag.original.points)
-          Coordinates(timestamp: p.timestamp + dt, price: ratio != null ? p.price * ratio : p.price + dp),
+          Coordinates(timestamp: _moved(p.timestamp, dt), price: ratio != null ? p.price * ratio : p.price + dp),
       ];
     }
     onDrawingChanged?.call(drag.original.copyWith(points: points));
@@ -467,18 +467,17 @@ class ChartController extends ChangeNotifier {
     final dx = (projection.xForTime(c.timestamp) - projection.xForTime(from.timestamp)).abs();
     final dy = (projection.yForPrice(c.price) - projection.yForPrice(from.price)).abs();
     if (dx < dy) return _snapped(Coordinates(timestamp: from.timestamp, price: c.price), size);
-    return Coordinates(timestamp: _onInterval(c.timestamp), price: from.price);
+    return Coordinates(timestamp: _onCandle(c.timestamp), price: from.price);
   }
 
   /// A point lands on the candle grid in time, as the crosshair aligns.
   /// With the magnet on, over a candle it also lands on its open, high,
   /// low or close when one is within [magnetReach].
   Coordinates _snapped(Coordinates c, Size size) {
-    final onGrid = Coordinates(timestamp: _onInterval(c.timestamp), price: c.price);
+    final onGrid = Coordinates(timestamp: _onCandle(c.timestamp), price: c.price);
     if (!magnet || _candles.isEmpty) return onGrid;
-    final halfInterval = _interval.inMilliseconds ~/ 2;
-    final index = _firstCandleFrom(c.timestamp - halfInterval);
-    if (index == _candles.length || _candles[index].timestamp - halfInterval > c.timestamp) return onGrid;
+    final index = _firstCandleFrom(onGrid.timestamp);
+    if (index == _candles.length || _candles[index].timestamp != onGrid.timestamp) return onGrid;
     final candle = _candles[index];
     final projection = projectionFor(size);
     final y = projection.yForPrice(c.price);
@@ -495,7 +494,17 @@ class ChartController extends ChangeNotifier {
     return Coordinates(timestamp: candle.timestamp, price: best);
   }
 
-  /// [time] — or a span of time — rounded to the nearest whole interval.
+  /// [time] moved by [dt]; a point on a candle's open stays on one, as
+  /// candles of uneven length, calendar months, do not all move by [dt].
+  int _moved(int time, int dt) {
+    final moved = time + dt;
+    return _candles.isNotEmpty && candleTimeOf(time, _candles) == time ? _onCandle(moved) : moved;
+  }
+
+  /// [time] on the nearest candle's open, or on the interval grid with none.
+  int _onCandle(int time) => _candles.isEmpty ? _onInterval(time) : nearestCandleTime(time, _candles);
+
+  /// [time] rounded to the nearest whole interval.
   int _onInterval(int time) {
     final interval = _interval.inMilliseconds;
     return interval == 0 ? time : (time / interval).round() * interval;

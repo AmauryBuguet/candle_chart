@@ -676,6 +676,87 @@ void main() {
       controller.onPointerUp(PointerUpEvent(position: at + by), _size);
     });
 
+    group('calendar months', () {
+      // The last twelve months, so the view anchored on now shows them.
+      final now = DateTime.now().toUtc();
+      final opens = [for (var m = -11; m <= 1; m++) DateTime.utc(now.year, now.month + m).millisecondsSinceEpoch];
+      final months = [
+        for (var i = 0; i < 12; i++)
+          ChartCandle(
+            timestamp: opens[i],
+            endTimestamp: opens[i + 1] - 1,
+            open: 100,
+            high: 110,
+            low: 90,
+            close: 105,
+            volume: 1,
+          ),
+      ];
+      ChartController monthly({List<ChartDrawing> drawings = const [], ChartDrawingTool? tool, bool magnet = false}) =>
+          ChartController(
+              interval: const Duration(days: 30),
+              viewConfig: const ChartViewConfig(startCandles: 16),
+              candles: months,
+              viewResetKey: 'BTC',
+              formatPrice: (price) => price.toStringAsFixed(1),
+              labelStyle: const ChartLabelStyle(),
+              indicators: const [],
+              colors: const ChartColors(),
+            )
+            ..drawings = drawings
+            ..activeTool = tool
+            ..magnet = magnet;
+
+      void down(ChartController controller, Offset at) => controller.onPointerDown(
+        PointerDownEvent(position: at, kind: PointerDeviceKind.mouse),
+        _size,
+        false,
+        onPointerDownInChart: (_, _, _, _) {},
+        onPointerDownOutsideChart: () {},
+      );
+
+      test('a placed point lands on the month it is nearest, magnet or not', () {
+        for (final magnet in [false, true]) {
+          ChartDrawing? created;
+          final controller = monthly(tool: ChartDrawingTool.horizontalLine, magnet: magnet)
+            ..onDrawingCreated = (d) => created = d;
+          final projection = controller.projectionFor(_size);
+          // Most of the way into a month lands on the next one's open.
+          down(controller, Offset(projection.xForTime(opens[10] - 3 * 86400000), projection.yForPrice(109.9)));
+          expect(created!.points.single.timestamp, opens[10]);
+          expect(created!.points.single.price, magnet ? 110 : isNot(110));
+        }
+      });
+
+      test('a dragged drawing keeps its points on month opens', () {
+        ChartDrawing? changed;
+        final line = ChartTrendLine(
+          id: 't',
+          points: [
+            Coordinates(timestamp: opens[1], price: 100),
+            Coordinates(timestamp: opens[3], price: 100),
+          ],
+          color: Colors.blue,
+          selected: true,
+        );
+        final controller = monthly(drawings: [line])..onDrawingChanged = (d) => changed = d;
+        final projection = controller.projectionFor(_size);
+        final at = Offset(
+          (projection.xForTime(opens[1]) + projection.xForTime(opens[3])) / 2,
+          projection.yForPrice(100),
+        );
+        down(controller, at);
+        // Five months on, of 28 to 31 days each.
+        final by = Offset(projection.xForTime(opens[7]) - projection.xForTime(opens[2]), 0);
+        controller.onPointerMove(
+          PointerMoveEvent(position: at + by, delta: by),
+          _size,
+          onDragUpdate: (_, _, _) => fail('the drawing takes the drag'),
+        );
+        expect(changed!.points.map((p) => p.timestamp), [opens[6], opens[8]]);
+      });
+    });
+
     test('a click selects a drawing and moves nothing; the next drag moves it; a click on nothing deselects', () {
       final ids = <Object?>[];
       ChartDrawing? changed;

@@ -1,6 +1,6 @@
 name: candle_chart
 description: "An independent, embeddable candlestick trading chart widget: pan/zoom, crosshair, draggable price lines, order overlays and position P&L shading."
-version: 0.13.0
+version: 0.13.1
 homepage: https://graphite.trade
 repository: https://github.com/AmauryBuguet/candle_chart
 issue_tracker: https://github.com/AmauryBuguet/candle_chart/issues
