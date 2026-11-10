@@ -99,6 +99,7 @@ class TradingChart extends StatefulWidget {
     required this.onPointerDownOutsideChart,
     required this.onDragUpdate,
     required this.onDragEnd,
+    this.onDragCancel,
     this.controller,
     this.onPriceAxisChanged,
     this.indicators = const [],
@@ -158,6 +159,10 @@ class TradingChart extends StatefulWidget {
   /// Called on pointer-up — the host may commit a drag here (e.g. send an
   /// edited order).
   final Future<void> Function() onDragEnd;
+
+  /// Called when the system takes the pointer away mid-gesture, where no
+  /// pointer-up follows: what the drag moved is shown where it was left.
+  final Future<void> Function()? onDragCancel;
 
   /// Optional handle exposing the chart's pixel transform and jump-to-live.
   final TradingChartController? controller;
@@ -432,7 +437,10 @@ class _TradingChartState extends State<TradingChart> {
                     _controller.onPointerUp(event, c.biggest);
                     await widget.onDragEnd();
                   },
-                  onPointerCancel: (_) => _controller.onPointerCancel(),
+                  onPointerCancel: (_) async {
+                    _controller.onPointerCancel();
+                    await widget.onDragCancel?.call();
+                  },
                   onPointerSignal: (event) => _controller.onPointerSignal(event, c.biggest),
                   child: GestureDetector(
                     onDoubleTap: _controller.onDoubleTap,

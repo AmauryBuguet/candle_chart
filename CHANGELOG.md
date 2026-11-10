@@ -1,3 +1,7 @@
+## Unreleased
+
+* `TradingChart.onDragCancel`: called when the system cancels the pointer mid-gesture.
+
 ## 0.13.2
 
 * A candle list that differs from the last one only in its last candle, or by candles appended, recomputes Ichimoku and Bollinger bands from the first changed candle on, and the change is found without a deep comparison.
