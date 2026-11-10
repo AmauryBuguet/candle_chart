@@ -1,15 +1,10 @@
-import 'dart:math';
-import 'dart:ui';
-
 import 'package:flutter/widgets.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../internal/candle_time.dart';
 import '../internal/chart_layout.dart';
 import '../internal/drawing_geometry.dart';
 import '../internal/indicator_render.dart';
 import '../internal/price_scale.dart' as scale;
-import '../internal/timesteps.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
 import '../models/chart_drawing.dart';
@@ -19,24 +14,15 @@ import '../models/chart_order_line.dart';
 import '../models/chart_position.dart';
 import '../models/chart_style.dart';
 import '../models/coordinates.dart';
+import 'axis_painter.dart';
+import 'candle_painter.dart';
+import 'crosshair_painter.dart';
 import 'dashes.dart';
 import 'drawing_painter.dart';
-import 'position_samples.dart';
+import 'position_painter.dart';
+import 'price_line_painter.dart';
+import 'profile_painter.dart';
 import 'series_painter.dart';
-
-/// Ceiling on the decimal places kept when cleaning up generated tick values,
-/// to avoid floating-point noise (e.g. 0.1 + 0.2) — unrelated to any price
-/// formatting/precision rule, which is entirely up to [ChartPainter.formatPrice].
-const int _maxTickCleanupDecimals = 8;
-
-/// The price rows a profile is binned into, over the visible price range.
-const int _profileRows = 100;
-
-/// A profile's widest bar, as a share of the price pane's width.
-const double _profileWidth = 0.30;
-
-/// How strongly the order book profile's colours show.
-const double _bookProfileOpacity = 0.4;
 
 /// An indicator with its computed series.
 typedef IndicatorEntry<T extends ChartIndicator> = (T indicator, IndicatorRender render);
@@ -109,6 +95,7 @@ class ChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final colors = style.colors;
     final chartRect = layout.priceRect;
+    final projection = projectionFor(chartRect);
 
     // Calculate visible candle indices
     int firstIndex = -1;
@@ -131,23 +118,35 @@ class ChartPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawRect(Offset.zero & size, backgroundPaint);
 
-    _drawValueAxis(canvas, chartRect, priceAxis, formatPrice, logScale: logScale);
-    final dateFormat = _drawTimeAxis(canvas);
+    final axes = AxisPainter(canvas: canvas, style: style, layout: layout, timeAxis: timeAxis);
+    axes.drawValueAxis(chartRect, priceAxis, formatPrice, logScale: logScale);
+    final dateFormat = axes.drawTimeAxis(projection.xForTime);
 
     _dimmed(canvas, () {
+      final profiles = ProfilePainter(canvas: canvas, projection: projection, priceAxis: priceAxis);
       for (final (overlay, _) in overlays) {
         if (overlay is ChartVolumeProfile) {
-          _drawVPVR(canvas, chartRect, firstIndex, effectiveEndIndex, overlay);
+          profiles.drawVolumeProfile(candles, firstIndex, effectiveEndIndex, overlay);
         } else if (overlay is ChartOrderBookProfile) {
-          _drawOrderBookProfile(canvas, chartRect, overlay);
+          profiles.drawOrderBookProfile(overlay);
         }
       }
     });
 
+    final candlePainter = CandlePainter(
+      canvas: canvas,
+      projection: projection,
+      candles: candles,
+      firstIndex: firstIndex,
+      endIndex: effectiveEndIndex,
+      style: style,
+      priceAxis: priceAxis,
+      timeAxis: timeAxis,
+    );
     if (style.chartType == ChartType.line) {
-      _drawCloseLine(canvas, chartRect, firstIndex, effectiveEndIndex);
+      candlePainter.drawCloseLine();
     } else {
-      _drawCandles(canvas, chartRect, firstIndex, effectiveEndIndex);
+      candlePainter.drawCandles();
     }
 
     // Studies sit over the candles but under the trade objects.
@@ -167,19 +166,23 @@ class ChartPainter extends CustomPainter {
       ).draw(_combinedOverlays()),
     );
 
-    // Draw lines (e.g. draft entry/SL/TP lines)
-    _drawLines(canvas, chartRect);
+    // Draft entry/SL/TP lines, then the orders.
+    PriceLinePainter(canvas: canvas, projection: projection, priceAxis: priceAxis, timeAxis: timeAxis)
+      ..drawLines(lines)
+      ..drawOrderLines(orderLines);
 
-    // Draw order overlays
-    _drawOrderLines(canvas, chartRect);
-
-    // Draw current position
-    _drawPositions(canvas, chartRect);
+    PositionPainter(
+      canvas: canvas,
+      projection: projection,
+      candles: candles,
+      timeAxis: timeAxis,
+      style: style,
+    ).draw(positions);
 
     if (drawings.isNotEmpty || placing != null) {
       final painter = DrawingPainter(
         canvas: canvas,
-        projection: projectionFor(chartRect),
+        projection: projection,
         textStyle: style.labelStyle.textStyle,
         formatPrice: formatPrice,
         intervalMs: intervalMs,
@@ -199,7 +202,7 @@ class ChartPainter extends CustomPainter {
       final rect = layout.paneRects[i];
       final axis = paneAxes[i];
       _drawHandle(canvas, layout.handleRects[i]);
-      _drawValueAxis(canvas, rect, axis, pane.formatValue);
+      axes.drawValueAxis(rect, axis, pane.formatValue);
       _drawLevels(canvas, rect, axis, render.levels);
       SeriesPainter(
         canvas: canvas,
@@ -216,7 +219,20 @@ class ChartPainter extends CustomPainter {
 
     final position = crosshairPosition;
     if (position != null && (style.crosshair || crosshairArmed) && layout.plotRect.contains(position)) {
-      _drawCrosshair(canvas, position, dateFormat, chartRect);
+      CrosshairPainter(
+        canvas: canvas,
+        projection: projection,
+        layout: layout,
+        style: style,
+        candles: candles,
+        priceAxis: priceAxis,
+        timeAxis: timeAxis,
+        logScale: logScale,
+        armed: crosshairArmed,
+        formatPrice: formatPrice,
+        panes: [for (final (pane, _) in panes) pane],
+        paneAxes: paneAxes,
+      ).draw(position, dateFormat);
     }
   }
 
@@ -286,757 +302,6 @@ class ChartPainter extends CustomPainter {
         pattern: [4, 4],
         paint: paint,
       );
-    }
-  }
-
-  /// Draws the Visible Range Volume Profile against its side of the chart.
-  void _drawVPVR(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex, ChartVolumeProfile profile) {
-    if (firstIndex == -1 || effectiveEndIndex == -1 || priceAxis.range <= 0) return;
-
-    // 1. Setup Price Bins
-    const int binsCount = _profileRows;
-    final double binPriceHeight = priceAxis.range / binsCount;
-    if (binPriceHeight <= 0) return;
-
-    final List<double> volumeBins = List.filled(binsCount, 0.0);
-    double maxVol = 0.0;
-    int pocIndex = -1;
-
-    // 2. Distribute volume of visible candles across bins
-    for (int i = firstIndex; i < effectiveEndIndex; i++) {
-      final candle = candles[i];
-      int startBin = ((candle.low - priceAxis.start) / binPriceHeight).floor();
-      int endBin = ((candle.high - priceAxis.start) / binPriceHeight).floor();
-
-      startBin = startBin.clamp(0, binsCount - 1);
-      endBin = endBin.clamp(0, binsCount - 1);
-
-      int binsSpanned = endBin - startBin + 1;
-      double volPerBin = candle.volume / binsSpanned;
-
-      for (int j = startBin; j <= endBin; j++) {
-        volumeBins[j] += volPerBin;
-      }
-    }
-
-    // 3. Find Max Volume for relative sizing
-    for (int i = 0; i < binsCount; i++) {
-      if (volumeBins[i] > maxVol) {
-        maxVol = volumeBins[i];
-        pocIndex = i;
-      }
-    }
-
-    if (maxVol == 0) return;
-
-    // 4. Draw the Histogram
-    canvas.save();
-    canvas.clipRect(chartRect);
-
-    final double maxBarWidth = chartRect.width * _profileWidth;
-
-    final Paint vpvrPaint = Paint()
-      ..color = profile.color
-      ..style = PaintingStyle.fill;
-
-    for (int i = 0; i < binsCount; i++) {
-      if (volumeBins[i] == 0) continue;
-
-      final double barWidth = (volumeBins[i] / maxVol) * maxBarWidth;
-      final double priceBottom = priceAxis.start + i * binPriceHeight;
-      final double priceTop = priceBottom + binPriceHeight;
-
-      final double yBottom = _getYPositionFromPrice(priceBottom, chartRect);
-      final double yTop = _getYPositionFromPrice(priceTop, chartRect);
-
-      final Rect barRect = _profileBar(chartRect, profile.side, 0, barWidth, yTop, yBottom);
-
-      canvas.drawRect(barRect, vpvrPaint);
-    }
-
-    // 5. Draw Point of Control (POC) Line
-    if (pocIndex != -1) {
-      // Calculate the exact price bounds for the POC bin
-      final double priceBottom = priceAxis.start + pocIndex * binPriceHeight;
-      final double priceTop = priceBottom + binPriceHeight;
-
-      // Convert prices to Y coordinates on the canvas
-      final double yBottom = _getYPositionFromPrice(priceBottom, chartRect);
-      final double yTop = _getYPositionFromPrice(priceTop, chartRect);
-
-      // Create a rectangle that spans the max bar width and matches the bin's exact height
-      final Rect pocRect = _profileBar(chartRect, profile.side, 0, maxBarWidth, yTop, yBottom);
-
-      final Paint pocPaint = Paint()
-        ..color = profile.pocColor
-        ..style = PaintingStyle.fill;
-      canvas.drawRect(pocRect, pocPaint);
-    }
-
-    canvas.restore();
-  }
-
-  /// Draws the order book profile: each level's size spread over the rows its
-  /// range covers, bids then asks stacked out from the profile's side.
-  void _drawOrderBookProfile(Canvas canvas, Rect chartRect, ChartOrderBookProfile profile) {
-    if (priceAxis.range <= 0) return;
-    final rowHeight = priceAxis.range / _profileRows;
-
-    List<double> rows(List<ChartBookLevel> levels) {
-      final sizes = List.filled(_profileRows, 0.0);
-      for (final level in levels) {
-        final span = level.high - level.low;
-        if (level.size <= 0) continue;
-        if (span <= 0) {
-          final row = ((level.low - priceAxis.start) / rowHeight).floor();
-          if (row >= 0 && row < _profileRows) sizes[row] += level.size;
-          continue;
-        }
-        final first = max(0, ((level.low - priceAxis.start) / rowHeight).floor());
-        final last = min(_profileRows - 1, ((level.high - priceAxis.start) / rowHeight).floor());
-        for (var row = first; row <= last; row++) {
-          final rowLow = priceAxis.start + row * rowHeight;
-          final overlap = min(level.high, rowLow + rowHeight) - max(level.low, rowLow);
-          if (overlap > 0) sizes[row] += level.size * overlap / span;
-        }
-      }
-      return sizes;
-    }
-
-    final bids = rows(profile.bidColor == null ? const [] : profile.bids);
-    final asks = rows(profile.askColor == null ? const [] : profile.asks);
-    var largest = 0.0;
-    for (var row = 0; row < _profileRows; row++) {
-      largest = max(largest, bids[row] + asks[row]);
-    }
-    if (largest == 0) return;
-
-    canvas.save();
-    canvas.clipRect(chartRect);
-    final maxWidth = chartRect.width * _profileWidth;
-    Paint? paintOf(Color? color) =>
-        color == null ? null : (Paint()..color = color.withValues(alpha: color.a * _bookProfileOpacity));
-    final bidPaint = paintOf(profile.bidColor);
-    final askPaint = paintOf(profile.askColor);
-    for (var row = 0; row < _profileRows; row++) {
-      if (bids[row] + asks[row] == 0) continue;
-      final rowLow = priceAxis.start + row * rowHeight;
-      final yBottom = _getYPositionFromPrice(rowLow, chartRect);
-      final yTop = _getYPositionFromPrice(rowLow + rowHeight, chartRect);
-      final bidWidth = bids[row] / largest * maxWidth;
-      final askWidth = asks[row] / largest * maxWidth;
-      if (bidPaint != null && bidWidth > 0) {
-        canvas.drawRect(_profileBar(chartRect, profile.side, 0, bidWidth, yTop, yBottom), bidPaint);
-      }
-      if (askPaint != null && askWidth > 0) {
-        canvas.drawRect(_profileBar(chartRect, profile.side, bidWidth, askWidth, yTop, yBottom), askPaint);
-      }
-    }
-    canvas.restore();
-  }
-
-  /// A profile's bar: [width] wide, starting [offset] in from [side].
-  Rect _profileBar(Rect chartRect, ChartProfileSide side, double offset, double width, double top, double bottom) =>
-      switch (side) {
-        ChartProfileSide.left => Rect.fromLTRB(chartRect.left + offset, top, chartRect.left + offset + width, bottom),
-        ChartProfileSide.right => Rect.fromLTRB(
-          chartRect.right - offset - width,
-          top,
-          chartRect.right - offset,
-          bottom,
-        ),
-      };
-
-  void _drawOrderLines(Canvas canvas, Rect chartRect) {
-    final dotPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 12.0;
-    for (final order in orderLines.where((e) => e.newPrice >= priceAxis.start && e.newPrice <= priceAxis.end)) {
-      if (order.timestamp < timeAxis.end) {
-        final isEditing = order.originalPrice != order.newPrice;
-
-        final paint = Paint()
-          ..color = order.color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = order.selected ? 2.5 : 1.5;
-        final x = _getXPositionFromTime(
-          order.timestamp < timeAxis.start ? timeAxis.start : order.timestamp,
-          chartRect,
-        );
-        final y = _getYPositionFromPrice(order.newPrice, chartRect);
-
-        drawDashedLine(
-          canvas: canvas,
-          p1: Offset(isEditing ? chartRect.left : x, y),
-          p2: Offset(chartRect.right, y),
-          pattern: [6.0, 6.0],
-          paint: paint,
-        );
-
-        canvas.drawPoints(PointMode.points, [Offset(x, y)], dotPaint..color = order.color);
-
-        if (isEditing && order.originalPrice >= priceAxis.start && order.originalPrice <= priceAxis.end) {
-          final oldY = _getYPositionFromPrice(order.originalPrice, chartRect);
-          drawDashedLine(
-            canvas: canvas,
-            p1: Offset(x, oldY),
-            p2: Offset(chartRect.right, oldY),
-            pattern: [6.0, 6.0],
-            paint: paint..color = order.color.withAlpha(100),
-          );
-        }
-      }
-    }
-  }
-
-  void _drawPositions(Canvas canvas, Rect chartRect) {
-    canvas.save();
-    canvas.clipRect(chartRect);
-
-    final double timeScale = chartRect.width / timeAxis.range;
-
-    double getX(int t) => chartRect.left + (t - timeAxis.start) * timeScale;
-    double getY(double p) => _getYPositionFromPrice(p, chartRect);
-
-    for (final position in positions) {
-      final bool isOpen = position.exit == null;
-      if (isOpen && candles.isEmpty) continue;
-
-      // A forming candle's close is the live price, and it is drawn at the
-      // right edge of that candle's slot rather than at its centre.
-      final int exitTimestamp = isOpen ? closeTime(candles.last) : position.exit!.timestamp;
-      final double exitPrice = isOpen ? candles.last.close : position.exit!.price;
-
-      if (exitTimestamp < timeAxis.start || position.entry.timestamp > timeAxis.end) {
-        continue;
-      }
-
-      final double entryX = getX(position.entry.timestamp);
-      final double entryY = getY(position.entry.price);
-      final double exitX = getX(exitTimestamp);
-      final double exitY = getY(exitPrice);
-
-      final bool isLong = position.side == ChartPositionSide.long;
-      final Path winPath = Path();
-      final Path lossPath = Path();
-
-      int getState(double p) {
-        if ((p - position.entry.price).abs() < 0.000001) return 0;
-        if (isLong) return p > position.entry.price ? 1 : -1;
-        return p < position.entry.price ? 1 : -1;
-      }
-
-      void startPath(int state, double x, double y) {
-        if (state == 1) {
-          winPath.moveTo(x, y);
-        } else if (state == -1) {
-          lossPath.moveTo(x, y);
-        }
-      }
-
-      void addToPath(int state, double x, double y) {
-        if (state == 1) {
-          winPath.lineTo(x, y);
-        } else if (state == -1) {
-          lossPath.lineTo(x, y);
-        }
-      }
-
-      void closeActivePath(int state) {
-        if (state == 1) {
-          winPath.close();
-        } else if (state == -1) {
-          lossPath.close();
-        }
-      }
-
-      double prevX = entryX;
-      double prevY = entryY;
-      double prevPrice = position.entry.price;
-      int currentPathState = 0;
-
-      final List<(int, double)> samples = positionSamples(
-        candles: candles,
-        entryTimestamp: position.entry.timestamp,
-        exitTimestamp: exitTimestamp,
-        exitPrice: exitPrice,
-      );
-
-      int i = 0;
-      while (true) {
-        final (int nextTs, double nextPrice) = samples[i];
-        final bool isLast = i == samples.length - 1;
-
-        final double nextX = getX(nextTs);
-        final double nextY = getY(nextPrice);
-
-        int prevState = getState(prevPrice);
-        int nextState = getState(nextPrice);
-
-        if (prevState != 0 && nextState != 0 && prevState != nextState) {
-          double ratio = (position.entry.price - prevPrice) / (nextPrice - prevPrice);
-          double interX = prevX + (nextX - prevX) * ratio;
-
-          addToPath(currentPathState, interX, entryY);
-          closeActivePath(currentPathState);
-
-          currentPathState = nextState;
-          startPath(currentPathState, interX, entryY);
-          addToPath(currentPathState, nextX, nextY);
-        } else if (prevState == 0 && nextState != 0) {
-          if (currentPathState == 0) {
-            currentPathState = nextState;
-            startPath(currentPathState, prevX, prevY);
-            addToPath(currentPathState, nextX, nextY);
-          } else if (currentPathState != nextState) {
-            closeActivePath(currentPathState);
-            currentPathState = nextState;
-            startPath(currentPathState, prevX, prevY);
-            addToPath(currentPathState, nextX, nextY);
-          } else {
-            addToPath(currentPathState, nextX, nextY);
-          }
-        } else {
-          if (currentPathState != 0) {
-            addToPath(currentPathState, nextX, nextY);
-          }
-        }
-
-        prevX = nextX;
-        prevY = nextY;
-        prevPrice = nextPrice;
-
-        if (isLast) break;
-        i++;
-      }
-
-      if (currentPathState != 0) {
-        if (currentPathState == 1) {
-          winPath.lineTo(prevX, entryY);
-        } else {
-          lossPath.lineTo(prevX, entryY);
-        }
-
-        closeActivePath(currentPathState);
-      }
-
-      canvas.drawPath(
-        winPath,
-        Paint()
-          ..color = style.colors.positionProfit.withAlpha(100)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawPath(
-        lossPath,
-        Paint()
-          ..color = style.colors.positionLoss.withAlpha(100)
-          ..style = PaintingStyle.fill,
-      );
-
-      final dotPaint = Paint()
-        ..color = isLong ? style.colors.positionProfit : style.colors.positionLoss
-        ..style = PaintingStyle.fill
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 12.0;
-
-      canvas.drawPoints(PointMode.points, [Offset(entryX, entryY)], dotPaint);
-
-      if (!isOpen) {
-        dotPaint.color = isLong ? style.colors.positionLoss : style.colors.positionProfit;
-        canvas.drawPoints(PointMode.points, [Offset(exitX, exitY)], dotPaint);
-      }
-    }
-
-    canvas.restore();
-  }
-
-  void _drawLines(Canvas canvas, Rect chartRect) {
-    canvas.save();
-    canvas.clipRect(chartRect);
-    for (final line in lines.where((e) => e.price >= priceAxis.start && e.price <= priceAxis.end)) {
-      final dotPaint = Paint()
-        ..style = PaintingStyle.fill
-        ..strokeCap = StrokeCap.round
-        ..color = line.color
-        ..strokeWidth = 12.0;
-      final paint = Paint()
-        ..color = line.color
-        ..strokeWidth = line.selected ? 2.0 : 1.0;
-      final y = _getYPositionFromPrice(line.price, chartRect);
-      canvas.drawLine(Offset(chartRect.left, y), Offset(chartRect.right, y), paint);
-      canvas.drawPoints(PointMode.points, [Offset(chartRect.left, y), Offset(chartRect.right, y)], dotPaint);
-    }
-    canvas.restore();
-  }
-
-  /// The closes joined up, the visible ones plus one either side.
-  void _drawCloseLine(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
-    if (firstIndex == -1 || effectiveEndIndex == -1) return;
-    canvas.save();
-    canvas.clipRect(chartRect);
-    final path = Path();
-    for (int i = max(0, firstIndex - 1); i < min(candles.length, effectiveEndIndex + 1); i++) {
-      final x = _getXPositionFromTime(candles[i].timestamp, chartRect);
-      final y = _getYPositionFromPrice(candles[i].close, chartRect);
-      if (i == max(0, firstIndex - 1)) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..strokeJoin = StrokeJoin.round
-        ..color = style.colors.line,
-    );
-    canvas.restore();
-  }
-
-  /// Renders all visible candles.
-  void _drawCandles(Canvas canvas, Rect chartRect, int firstIndex, int effectiveEndIndex) {
-    if (firstIndex == -1 || effectiveEndIndex == -1) return;
-
-    // Use the first visible candle to determine the time difference
-    final diffTs = candles[firstIndex].endTimestamp - candles[firstIndex].timestamp;
-    final double candleDemiWidth = chartRect.width * 0.35 * diffTs / timeAxis.range;
-
-    canvas.save();
-    canvas.clipRect(chartRect);
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    final bodyPaint = Paint()..style = PaintingStyle.fill;
-
-    for (int i = firstIndex; i < effectiveEndIndex; i++) {
-      final candle = candles[i];
-
-      if (candle.low > priceAxis.end || candle.high < priceAxis.start) {
-        continue;
-      }
-
-      paint.color = _colorFromCandle(candle);
-      bodyPaint.color = paint.color;
-
-      final x = _getXPositionFromTime(candle.timestamp, chartRect);
-      final openY = _getYPositionFromPrice(candle.open, chartRect);
-      final closeY = _getYPositionFromPrice(candle.close, chartRect);
-      final highY = _getYPositionFromPrice(candle.high, chartRect);
-      final lowY = _getYPositionFromPrice(candle.low, chartRect);
-
-      final top = min(openY, closeY);
-      final bottom = max(openY, closeY);
-
-      canvas.drawLine(Offset(x, highY), Offset(x, top), paint);
-      canvas.drawLine(Offset(x, bottom), Offset(x, lowY), paint);
-
-      final bodyRect = Rect.fromLTWH(x - candleDemiWidth, top, candleDemiWidth * 2, max(1.0, bottom - top));
-      canvas.drawRect(bodyRect, _fillsBody(candle) ? bodyPaint : paint);
-    }
-
-    canvas.restore();
-  }
-
-  /// Whether this candle's body is painted solid rather than outlined. A doji
-  /// has no body to fill.
-  bool _fillsBody(ChartCandle candle) {
-    if (candle.close > candle.open) return style.filledUpCandles;
-    if (candle.close < candle.open) return style.filledDownCandles;
-    return false;
-  }
-
-  /// Gets the color of a [ChartCandle] based on price movement.
-  Color _colorFromCandle(ChartCandle candle) {
-    if (candle.close > candle.open) {
-      return style.colors.upCandle;
-    } else if (candle.close < candle.open) {
-      return style.colors.downCandle;
-    } else {
-      return style.colors.doji;
-    }
-  }
-
-  /// A hairline: the colour's alpha is what keeps the grid quiet, and a
-  /// thinner stroke would anti-alias it out of sight.
-  Paint get _gridPaint => Paint()
-    ..color = style.colors.grid
-    ..strokeWidth = 1.0;
-
-  /// One pane's value ticks: a grid line across it and a label in the right
-  /// gutter, clipped to the pane so a tick at its edge does not stray into
-  /// the next.
-  void _drawValueAxis(
-    Canvas canvas,
-    Rect rect,
-    PriceAxis axis,
-    String Function(double) format, {
-    bool logScale = false,
-  }) {
-    final ticks = logScale
-        ? _generateLogPriceTicks(axis.start, axis.end, rect.height)
-        : _generateNicePriceTicks(axis.start, axis.end, rect.height);
-    final gridPaint = _gridPaint;
-    for (final tick in ticks) {
-      final y = scale.yForPrice(tick, axis, rect, logScale: logScale);
-      if (style.grid) canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), gridPaint);
-      final tp = TextPainter(
-        text: TextSpan(text: format(tick), style: style.labelStyle.textStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      if (y - tp.height / 2 < rect.top - 1 || y + tp.height / 2 > rect.bottom + 1) continue;
-      tp.paint(canvas, Offset(rect.right + style.labelStyle.labelMargin, y - tp.height / 2));
-    }
-  }
-
-  /// The time ticks: a grid line down through every pane and a label under
-  /// the last one. Returns the label format for the crosshair to reuse.
-  String _drawTimeAxis(Canvas canvas) {
-    final chartRect = layout.priceRect;
-    final timeTicks = _generateNiceTimeTicks(chartRect.width);
-    final gridPaint = _gridPaint;
-    for (final tick in timeTicks.$1) {
-      final x = _getXPositionFromTime(tick.millisecondsSinceEpoch, chartRect);
-      if (style.grid) canvas.drawLine(Offset(x, layout.plotTop), Offset(x, layout.plotBottom), gridPaint);
-      final tp = TextPainter(
-        text: TextSpan(text: _formatTime(tick, timeTicks.$2), style: style.labelStyle.textStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(x - tp.width / 2, layout.plotBottom + style.labelStyle.labelMargin));
-    }
-    return timeTicks.$2;
-  }
-
-  /// Draws the crosshair and its axis-aligned labels.
-  void _drawCrosshair(Canvas canvas, Offset position, String dateFormat, Rect chartRect) {
-    final backgroundPaint = Paint()..color = style.colors.crosshairLabelBackground;
-    final paint = Paint()
-      ..color = crosshairArmed ? style.colors.cursor : style.colors.crosshair
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = crosshairArmed ? 0.8 : 0.6;
-
-    double dx = position.dx;
-    if (candles.isNotEmpty) {
-      final time = _getTimeFromXPosition(x: dx, chartRect: chartRect, axis: timeAxis);
-      dx = _getXPositionFromTime(nearestCandleTime(time, candles), chartRect);
-    }
-
-    drawDashedLine(
-      canvas: canvas,
-      p1: Offset(chartRect.left, position.dy),
-      p2: Offset(chartRect.right, position.dy),
-      pattern: [10.0, 10.0],
-      paint: paint,
-    );
-    drawDashedLine(
-      canvas: canvas,
-      p1: Offset(dx, layout.plotTop),
-      p2: Offset(dx, layout.plotBottom),
-      pattern: [10.0, 10.0],
-      paint: paint,
-    );
-
-    // Draw time label
-    final ms = _getTimeFromXPosition(x: dx, chartRect: chartRect, axis: timeAxis);
-    final timeMs = DateTime.fromMillisecondsSinceEpoch(ms);
-    final timeText = _formatTime(timeMs, dateFormat);
-    final timePainter = TextPainter(
-      text: TextSpan(
-        text: timeText,
-        style: style.labelStyle.textStyle.copyWith(color: style.colors.crosshairLabelText),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final timeRect = Rect.fromLTWH(
-      dx - timePainter.width / 2 - style.labelStyle.padding,
-      layout.plotBottom + style.labelStyle.labelMargin - style.labelStyle.padding,
-      timePainter.width + style.labelStyle.padding * 2,
-      timePainter.height + style.labelStyle.padding * 2,
-    );
-    canvas.drawRect(timeRect, backgroundPaint);
-    timePainter.paint(canvas, Offset(dx - timePainter.width / 2, layout.plotBottom + style.labelStyle.labelMargin));
-
-    // The value under the pointer, in whichever pane it is in.
-    final paneIndex = layout.paneAt(position);
-    final String priceText;
-    if (paneIndex == null) {
-      priceText = formatPrice(_getPriceFromYPosition(y: position.dy, chartRect: chartRect, axis: priceAxis));
-    } else {
-      final value = _getPriceFromYPosition(
-        y: position.dy,
-        chartRect: layout.paneRects[paneIndex],
-        axis: paneAxes[paneIndex],
-      );
-      priceText = panes[paneIndex].$1.formatValue(value);
-    }
-    final pricePainter = TextPainter(
-      text: TextSpan(
-        text: priceText,
-        style: style.labelStyle.textStyle.copyWith(color: style.colors.crosshairLabelText),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final priceRect = Rect.fromLTWH(
-      chartRect.right + style.labelStyle.labelMargin - style.labelStyle.padding,
-      position.dy - pricePainter.height / 2 - style.labelStyle.padding,
-      pricePainter.width + style.labelStyle.padding * 2,
-      pricePainter.height + style.labelStyle.padding * 2,
-    );
-    canvas.drawRect(priceRect, backgroundPaint);
-    pricePainter.paint(
-      canvas,
-      Offset(chartRect.right + style.labelStyle.labelMargin, position.dy - pricePainter.height / 2),
-    );
-  }
-
-  /// Generates rounded price ticks based on chart height.
-  List<double> _generateNicePriceTicks(double start, double end, double chartHeight) {
-    final range = end - start;
-    final approxTicks = (chartHeight / style.labelStyle.minSpacingPxPriceAxis).floor().clamp(2, 100);
-    final rawStep = range / approxTicks;
-    final step = _niceStep(rawStep);
-    final firstStepIndex = (start / step).ceil();
-    final lastStepIndex = (end / step).floor();
-    final ticks = <double>[];
-    for (int i = firstStepIndex; i <= lastStepIndex; i++) {
-      final rawTick = i * step;
-      ticks.add(_cleanFloat(rawTick));
-    }
-    return ticks;
-  }
-
-  /// Ticks at 1, 2 and 5 of each decade the axis spans, thinned to the
-  /// decades alone when they would crowd, and the linear ticks when the
-  /// range is too narrow to hold two of them.
-  List<double> _generateLogPriceTicks(double start, double end, double chartHeight) {
-    if (start <= 0) return _generateNicePriceTicks(start, end, chartHeight);
-    final ticks = <double>[];
-    final lowDecade = (log(start) / ln10).floor();
-    final highDecade = (log(end) / ln10).ceil();
-    for (var k = lowDecade; k <= highDecade; k++) {
-      for (final m in const [1, 2, 5]) {
-        final tick = m * pow(10, k).toDouble();
-        if (tick >= start && tick <= end) ticks.add(_cleanFloat(tick));
-      }
-    }
-    final maxTicks = (chartHeight / style.labelStyle.minSpacingPxPriceAxis).floor().clamp(2, 100);
-    if (ticks.length > maxTicks) {
-      ticks.removeWhere((t) => (log(t) / ln10) % 1 != 0);
-    }
-    if (ticks.length < 2) return _generateNicePriceTicks(start, end, chartHeight);
-    return ticks;
-  }
-
-  double _cleanFloat(double value) {
-    return double.parse(value.toStringAsFixed(_maxTickCleanupDecimals));
-  }
-
-  /// Rounds raw step to a human-friendly value.
-  double _niceStep(double raw) {
-    final exp = (log(raw) / ln10).floor();
-    final base = raw / pow(10, exp);
-    final rounded = base < 1.5
-        ? 1
-        : base < 3
-        ? 2
-        : base < 7
-        ? 5
-        : 10;
-    return rounded * pow(10, exp).toDouble();
-  }
-
-  /// Generates rounded time ticks and the format string to use.
-  (List<DateTime>, String) _generateNiceTimeTicks(double chartWidth) {
-    final rangeMs = timeAxis.range;
-    final approxTicks = (chartWidth / style.labelStyle.minSpacingPxTimeAxis).floor().clamp(2, 50);
-    final rawStep = rangeMs ~/ approxTicks;
-
-    final timestep = TimeSteps.values.firstWhere(
-      (e) => rawStep < e.duration.inMilliseconds,
-      orElse: () => TimeSteps.values.last,
-    );
-
-    final ticks = <DateTime>[];
-    DateTime date = DateTime.fromMillisecondsSinceEpoch(timeAxis.start);
-    if (timestep.duration.inDays < 2) {
-      final offset = date.timeZoneOffset;
-      final firstTickMs =
-          ((timeAxis.start + offset.inMilliseconds) / timestep.duration.inMilliseconds).ceil() *
-              timestep.duration.inMilliseconds -
-          offset.inMilliseconds;
-      for (int ms = firstTickMs; ms <= timeAxis.end; ms += timestep.duration.inMilliseconds) {
-        ticks.add(DateTime.fromMillisecondsSinceEpoch(ms));
-      }
-    } else {
-      final endDate = DateTime.fromMillisecondsSinceEpoch(timeAxis.end);
-      if (timestep.duration.inDays < 25) {
-        date = date.add(const Duration(days: 1));
-        int day = ((date.day - 1) / timestep.duration.inDays).ceil() * timestep.duration.inDays + 1;
-        DateTime currDate = DateTime(date.year, date.month, day);
-        while (true) {
-          if (currDate.month != date.month) {
-            currDate = DateTime(currDate.year, currDate.month);
-          }
-          if (currDate.isBefore(endDate)) {
-            if (ticks.isNotEmpty && currDate.difference(ticks.last) < timestep.duration) {
-              ticks.removeLast();
-            }
-            ticks.add(currDate);
-          } else {
-            break;
-          }
-          date = currDate;
-          currDate = currDate.add(timestep.duration);
-        }
-      } else if (timestep.duration.inDays < 365) {
-        date = DateTime(date.year, date.month + 1);
-        int nbMonth = timestep.duration.inDays ~/ 30;
-        int month = ((date.month - 1) / nbMonth).ceil() * nbMonth + 1;
-        DateTime currDate = DateTime(date.year, month);
-        while (true) {
-          if (currDate.year != date.year) {
-            currDate = DateTime(currDate.year);
-          }
-          if (currDate.isBefore(endDate)) {
-            ticks.add(currDate);
-          } else {
-            break;
-          }
-          date = currDate;
-          currDate = DateTime(currDate.year, currDate.month + nbMonth);
-        }
-      } else {
-        date = DateTime(date.year + 1);
-        int nbYears = timestep.duration.inDays ~/ 365;
-        int year = (date.year / nbYears).ceil() * nbYears;
-        DateTime currDate = DateTime(year);
-        while (true) {
-          if (currDate.isBefore(endDate)) {
-            ticks.add(currDate);
-          } else {
-            break;
-          }
-          date = currDate;
-          currDate = DateTime(currDate.year + nbYears);
-        }
-      }
-    }
-    return (ticks, timestep.format);
-  }
-
-  /// Formats a time label using intl.
-  String _formatTime(DateTime dt, String dateFormat) {
-    if (dt.month == 1 && dt.day == 1) {
-      return DateFormat('yyyy', style.labelStyle.locale).format(dt);
-    } else if (dt.day == 1 && dt.hour == 0) {
-      return DateFormat('MMM', style.labelStyle.locale).format(dt);
-    } else if (dt.hour == 0 && dt.minute == 0) {
-      return DateFormat('dd/MM', style.labelStyle.locale).format(dt);
-    } else {
-      return DateFormat(dateFormat, style.labelStyle.locale).format(dt);
     }
   }
 

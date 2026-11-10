@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import 'candle_time.dart';
 import 'indicator_render.dart';
 
 /// The value axis of a pane: its fixed range when the indicator has one,
@@ -15,11 +16,10 @@ PriceAxis fitPaneAxis({
   final fixed = render.fixedRange;
   if (fixed != null) return PriceAxis(start: fixed.$1, end: fixed.$2);
 
-  var first = candles.indexWhere((c) => c.timestamp >= timeAxis.start);
-  if (first == -1) return const PriceAxis();
+  var first = firstCandleFrom(timeAxis.start, candles);
+  if (first == candles.length) return const PriceAxis();
   if (first > 0) first--;
-  var last = candles.indexWhere((c) => c.timestamp >= timeAxis.end, first);
-  if (last == -1) last = candles.length;
+  final last = firstCandleFrom(timeAxis.end, candles, first);
 
   var low = double.infinity;
   var high = double.negativeInfinity;

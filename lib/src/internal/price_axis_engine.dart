@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
+import 'candle_time.dart';
 
 /// Pure price-axis state and fit/pan/zoom math. No framework dependency.
 class PriceAxisEngine {
@@ -23,18 +24,18 @@ class PriceAxisEngine {
   }) {
     if (!anchored) return;
 
-    var firstIndex = candles.indexWhere((e) => e.timestamp >= timeAxis.start);
-    if (firstIndex == -1) {
+    var firstIndex = firstCandleFrom(timeAxis.start, candles);
+    if (firstIndex == candles.length) {
       axis = const PriceAxis();
       return;
     } else if (firstIndex > 0) {
       firstIndex--;
     }
-    var lastIndex = candles.indexWhere((e) => e.timestamp >= timeAxis.end, firstIndex);
-    if (lastIndex != -1 && lastIndex < candles.length - 1) {
+    var lastIndex = firstCandleFrom(timeAxis.end, candles, firstIndex);
+    if (lastIndex < candles.length - 1) {
       lastIndex++;
     }
-    final sublist = candles.sublist(firstIndex, lastIndex != -1 ? lastIndex : null);
+    final sublist = candles.sublist(firstIndex, lastIndex);
     final minValue = sublist.map((e) => e.low).min;
     final maxValue = sublist.map((e) => e.high).max;
     if (logScale && minValue > 0) {

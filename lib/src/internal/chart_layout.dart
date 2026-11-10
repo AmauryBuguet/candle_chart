@@ -81,3 +81,7 @@ List<double> clampPaneFractions(List<double> fractions) {
   final scale = (1 - minPrice) / total;
   return [for (final f in clamped) f * scale];
 }
+
+/// [point] moved the least it takes to lie within [rect].
+Offset offsetWithin(Offset point, Rect rect) =>
+    Offset(point.dx.clamp(rect.left, rect.right), point.dy.clamp(rect.top, rect.bottom));

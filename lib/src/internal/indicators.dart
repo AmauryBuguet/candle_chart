@@ -54,20 +54,38 @@ List<double?> volumeWeightedAveragePrice(List<ChartCandle> candles) {
   return values;
 }
 
+typedef BollingerBand = ({double middle, double upper, double lower});
+
+/// Bollinger bands with the running sums after each candle, to carry them on.
+typedef BollingerRun = ({List<BollingerBand?> bands, List<double> sums, List<double> squares});
+
 /// One Bollinger band per candle: `null` until [period] closes have accrued,
 /// then the simple average with a band [deviation] population standard
 /// deviations either side of it.
-List<({double middle, double upper, double lower})?> bollingerBands(
+List<BollingerBand?> bollingerBands(List<ChartCandle> candles, int period, double deviation) =>
+    bollingerRun(candles, period, deviation).bands;
+
+/// [bollingerBands] with their running sums, carried on from [previous] at
+/// [from] when the candles before [from] are those it was computed on.
+BollingerRun bollingerRun(
   List<ChartCandle> candles,
   int period,
-  double deviation,
-) {
-  final bands = List<({double middle, double upper, double lower})?>.filled(candles.length, null);
-  if (period <= 1 || candles.length < period) return bands;
+  double deviation, {
+  BollingerRun? previous,
+  int from = 0,
+}) {
+  final n = candles.length;
+  if (period <= 1 || n < period) {
+    return (bands: List<BollingerBand?>.filled(n, null), sums: const [], squares: const []);
+  }
+  final resume = previous != null && from > 0 && from <= min(n, previous.sums.length);
+  final bands = resume ? _resumed(previous.bands, from, n, null) : List<BollingerBand?>.filled(n, null);
+  final sums = resume ? _resumed(previous.sums, from, n, 0.0) : List<double>.filled(n, 0);
+  final squareSums = resume ? _resumed(previous.squares, from, n, 0.0) : List<double>.filled(n, 0);
 
-  double sum = 0;
-  double squares = 0;
-  for (var i = 0; i < candles.length; i++) {
+  double sum = resume ? previous.sums[from - 1] : 0;
+  double squares = resume ? previous.squares[from - 1] : 0;
+  for (var i = resume ? from : 0; i < n; i++) {
     final close = candles[i].close;
     sum += close;
     squares += close * close;
@@ -76,6 +94,8 @@ List<({double middle, double upper, double lower})?> bollingerBands(
       sum -= gone;
       squares -= gone * gone;
     }
+    sums[i] = sum;
+    squareSums[i] = squares;
     if (i < period - 1) continue;
 
     final mean = sum / period;
@@ -83,7 +103,7 @@ List<({double middle, double upper, double lower})?> bollingerBands(
     final width = sqrt(variance) * deviation;
     bands[i] = (middle: mean, upper: mean + width, lower: mean - width);
   }
-  return bands;
+  return (bands: bands, sums: sums, squares: squareSums);
 }
 
 /// Wilder's RSI of the closes: `null` until [period] changes have accrued,
@@ -179,21 +199,29 @@ List<({double k, double d})?> stochastic(List<ChartCandle> candles, int kPeriod,
   return result;
 }
 
+typedef IchimokuLines = ({double conversion, double base, double spanA, double spanB});
+
 /// Ichimoku's five lines, each indexed by the candle it is computed on —
 /// the leading spans are meant to be drawn [ChartIchimoku.displacement]
 /// candles ahead and the lagging span as many behind, which is the
-/// painter's business, not this one's.
-List<({double conversion, double base, double spanA, double spanB})?> ichimoku(
+/// painter's business, not this one's. Carried on from [previous] at
+/// [from] when the candles before [from] are those it was computed on.
+List<IchimokuLines?> ichimoku(
   List<ChartCandle> candles,
   int conversionPeriod,
   int basePeriod,
-  int spanPeriod,
-) {
-  final result = List<({double conversion, double base, double spanA, double spanB})?>.filled(candles.length, null);
-  final conversion = _midpoint(candles, conversionPeriod);
-  final base = _midpoint(candles, basePeriod);
-  final spanB = _midpoint(candles, spanPeriod);
-  for (var i = 0; i < candles.length; i++) {
+  int spanPeriod, {
+  List<IchimokuLines?>? previous,
+  int from = 0,
+}) {
+  final keep = previous == null ? 0 : min(from, min(previous.length, candles.length));
+  final result = previous == null
+      ? List<IchimokuLines?>.filled(candles.length, null)
+      : _resumed(previous, keep, candles.length, null);
+  final conversion = _midpoint(candles, conversionPeriod, keep);
+  final base = _midpoint(candles, basePeriod, keep);
+  final spanB = _midpoint(candles, spanPeriod, keep);
+  for (var i = keep; i < candles.length; i++) {
     final c = conversion[i];
     final b = base[i];
     final sb = spanB[i];
@@ -342,9 +370,10 @@ List<({MarketSession session, int start, int end, double high, double low})> ses
   return ranges;
 }
 
-List<double?> _midpoint(List<ChartCandle> candles, int period) {
+/// The midpoint of the last [period] candles' range, from candle [from] on.
+List<double?> _midpoint(List<ChartCandle> candles, int period, int from) {
   final values = List<double?>.filled(candles.length, null);
-  for (var i = period - 1; i < candles.length; i++) {
+  for (var i = max(period - 1, from); i < candles.length; i++) {
     double highest = double.negativeInfinity;
     double lowest = double.infinity;
     for (var k = i - period + 1; k <= i; k++) {
@@ -399,3 +428,8 @@ List<double?> _rollingMeanNullable(List<double?> values, int period) {
   }
   return result;
 }
+
+/// A list of [length] starting with [previous]'s first [from] items, the
+/// rest [fill].
+List<T> _resumed<T>(List<T> previous, int from, int length, T fill) =>
+    List<T>.filled(length, fill)..setRange(0, from, previous);

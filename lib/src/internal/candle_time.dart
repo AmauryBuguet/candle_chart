@@ -50,6 +50,21 @@ int nearestCandleTime(int time, List<ChartCandle> candles) {
   return (open, min(open + span, next));
 }
 
+/// The index of the first candle from [start] on opening at or after
+/// [time], by bisection; [candles]' length when there is none.
+int firstCandleFrom(int time, List<ChartCandle> candles, [int start = 0]) {
+  var low = start, high = candles.length;
+  while (low < high) {
+    final mid = (low + high) ~/ 2;
+    if (candles[mid].timestamp < time) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
+
 int _span(ChartCandle candle) => candle.endTimestamp + 1 - candle.timestamp;
 
 /// The index of the last candle opening at or before [time], which falls

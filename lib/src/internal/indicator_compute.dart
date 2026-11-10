@@ -24,8 +24,13 @@ IndicatorRender renderIndicator(ChartIndicator indicator, List<ChartCandle> cand
     ChartVwap(:final color) => IndicatorRender(
       series: [IndicatorSeries(values: volumeWeightedAveragePrice(candles), color: color)],
     ),
-    ChartBollinger(:final period, :final deviation, :final color) => _bollinger(candles, period, deviation, color),
-    ChartIchimoku() => _ichimoku(candles, indicator),
+    ChartBollinger(:final period, :final deviation, :final color) => _bollinger(
+      candles,
+      period,
+      deviation,
+      color,
+    ).render,
+    ChartIchimoku() => _ichimoku(candles, indicator).render,
     ChartSuperTrend(:final period, :final multiplier, :final upColor, :final downColor) => _superTrend(
       candles,
       period,
@@ -49,6 +54,28 @@ IndicatorRender renderIndicator(ChartIndicator indicator, List<ChartCandle> cand
     ),
   };
 }
+
+/// An indicator's render over a list of candles, with what it takes to
+/// carry it on when only the candles from some index on have changed.
+class IndicatorRun {
+  const IndicatorRun(this.render, [this._resume]);
+
+  final IndicatorRender render;
+  final IndicatorRun Function(List<ChartCandle> candles, int from)? _resume;
+
+  /// The run over [candles], whose first [from] are those this one was
+  /// computed on; `null` when the indicator is only computed in full.
+  IndicatorRun? resume(List<ChartCandle> candles, int from) => _resume?.call(candles, from);
+}
+
+/// [renderIndicator], carried on from where the candles changed for the
+/// indicators whose full computation is costly enough to be worth it.
+IndicatorRun runIndicator(ChartIndicator indicator, List<ChartCandle> candles, ChartColors colors) =>
+    switch (indicator) {
+      ChartBollinger(:final period, :final deviation, :final color) => _bollinger(candles, period, deviation, color),
+      ChartIchimoku() => _ichimoku(candles, indicator),
+      _ => IndicatorRun(renderIndicator(indicator, candles, colors)),
+    };
 
 IndicatorRender _periodLevels(List<ChartCandle> candles, ChartPeriodLevels indicator) {
   final levels = periodLevels(candles, indicator);
@@ -90,20 +117,50 @@ IndicatorRender _sessions(List<ChartCandle> candles, ChartSessions indicator) =>
   MarketSession.newYork => (indicator.newYorkColor, indicator.newYorkLabel),
 };
 
-IndicatorRender _bollinger(List<ChartCandle> candles, int period, double deviation, Color color) {
-  final bands = bollingerBands(candles, period, deviation);
-  return IndicatorRender(
-    series: [
-      IndicatorSeries(values: [for (final b in bands) b?.upper], color: color, width: 1),
-      IndicatorSeries(values: [for (final b in bands) b?.lower], color: color, width: 1),
-      IndicatorSeries(values: [for (final b in bands) b?.middle], color: color, width: 0.6),
-    ],
-    bands: [IndicatorBand(first: 0, second: 1, above: color.withAlpha(20), below: color.withAlpha(20))],
+IndicatorRun _bollinger(
+  List<ChartCandle> candles,
+  int period,
+  double deviation,
+  Color color, [
+  BollingerRun? previous,
+  int from = 0,
+]) {
+  final run = bollingerRun(candles, period, deviation, previous: previous, from: from);
+  final bands = run.bands;
+  return IndicatorRun(
+    IndicatorRender(
+      series: [
+        IndicatorSeries(values: [for (final b in bands) b?.upper], color: color, width: 1),
+        IndicatorSeries(values: [for (final b in bands) b?.lower], color: color, width: 1),
+        IndicatorSeries(values: [for (final b in bands) b?.middle], color: color, width: 0.6),
+      ],
+      bands: [IndicatorBand(first: 0, second: 1, above: color.withAlpha(20), below: color.withAlpha(20))],
+    ),
+    (candles, from) => _bollinger(candles, period, deviation, color, run, from),
   );
 }
 
-IndicatorRender _ichimoku(List<ChartCandle> candles, ChartIchimoku indicator) {
-  final lines = ichimoku(candles, indicator.conversionPeriod, indicator.basePeriod, indicator.spanPeriod);
+IndicatorRun _ichimoku(
+  List<ChartCandle> candles,
+  ChartIchimoku indicator, [
+  List<IchimokuLines?>? previous,
+  int from = 0,
+]) {
+  final lines = ichimoku(
+    candles,
+    indicator.conversionPeriod,
+    indicator.basePeriod,
+    indicator.spanPeriod,
+    previous: previous,
+    from: from,
+  );
+  return IndicatorRun(
+    _ichimokuRender(candles, indicator, lines),
+    (candles, from) => _ichimoku(candles, indicator, lines, from),
+  );
+}
+
+IndicatorRender _ichimokuRender(List<ChartCandle> candles, ChartIchimoku indicator, List<IchimokuLines?> lines) {
   final ChartIchimoku(:spanAColor, :spanBColor, :conversionColor, :baseColor, :laggingColor) = indicator;
   return IndicatorRender(
     series: [
@@ -158,6 +215,9 @@ IndicatorRender _superTrend(
 }
 
 IndicatorRender _volume(List<ChartCandle> candles, ChartColors colors) {
+  final up = colors.upCandle.withAlpha(110);
+  final down = colors.downCandle.withAlpha(110);
+  final doji = colors.doji.withAlpha(110);
   return IndicatorRender(
     series: [
       IndicatorSeries(
@@ -166,12 +226,11 @@ IndicatorRender _volume(List<ChartCandle> candles, ChartColors colors) {
         kind: SeriesKind.histogram,
         barColors: [
           for (final c in candles)
-            (c.close > c.open
-                    ? colors.upCandle
-                    : c.close < c.open
-                    ? colors.downCandle
-                    : colors.doji)
-                .withAlpha(110),
+            c.close > c.open
+                ? up
+                : c.close < c.open
+                ? down
+                : doji,
         ],
       ),
     ],
@@ -182,6 +241,8 @@ IndicatorRender _volume(List<ChartCandle> candles, ChartColors colors) {
 IndicatorRender _macd(List<ChartCandle> candles, ChartMacd indicator) {
   final values = macd(candles, indicator.fastPeriod, indicator.slowPeriod, indicator.signalPeriod);
   final ChartMacd(:upColor, :downColor, :macdColor, :signalColor) = indicator;
+  final upBar = upColor?.withAlpha(140);
+  final downBar = downColor?.withAlpha(140);
   return IndicatorRender(
     series: [
       if (upColor != null || downColor != null)
@@ -194,8 +255,8 @@ IndicatorRender _macd(List<ChartCandle> candles, ChartMacd indicator) {
               v == null
                   ? null
                   : v.histogram >= 0
-                  ? upColor?.withAlpha(140)
-                  : downColor?.withAlpha(140),
+                  ? upBar
+                  : downBar,
           ],
         ),
       if (macdColor != null) IndicatorSeries(values: [for (final v in values) v?.macd], color: macdColor),

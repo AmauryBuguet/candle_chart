@@ -1,3 +1,8 @@
+## 0.13.2
+
+* A candle list that differs from the last one only in its last candle, or by candles appended, recomputes Ichimoku and Bollinger bands from the first changed candle on, and the change is found without a deep comparison.
+* The price and pane axes find the visible candles by bisection rather than scanning from the oldest.
+
 ## 0.13.1
 
 * The crosshair and drawing points snap to the nearest candle's open, so they line up with candles of uneven length, such as calendar weeks and months.
