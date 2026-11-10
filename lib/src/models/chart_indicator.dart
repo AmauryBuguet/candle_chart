@@ -24,10 +24,13 @@ sealed class ChartOverlay extends ChartIndicator {
 /// An indicator drawn in a pane of its own under the price pane, with a
 /// value axis fitted to what is visible (or fixed, for a bounded oscillator).
 sealed class ChartPaneIndicator extends ChartIndicator {
-  const ChartPaneIndicator({this.height = 0.2}) : assert(height > 0 && height < 1);
+  const ChartPaneIndicator({this.height = 0.2, this.label = ''}) : assert(height > 0 && height < 1);
 
   /// The pane's share of the chart's plot height when it is first shown.
   final double height;
+
+  /// The pane's name, written in its top-left corner; nothing when empty.
+  final String label;
 
   /// How this pane's axis values read.
   String formatValue(double value);

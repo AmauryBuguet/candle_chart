@@ -2,10 +2,10 @@ part of 'chart_indicator.dart';
 
 /// Each candle's volume as a bar, in its candle's colour.
 class ChartVolume extends ChartPaneIndicator {
-  const ChartVolume({super.height = 0.15});
+  const ChartVolume({super.height = 0.15, super.label});
 
   @override
-  List<Object> get props => [height];
+  List<Object> get props => [height, label];
 
   @override
   String formatValue(double value) => formatCompact(value);
@@ -20,6 +20,7 @@ class ChartRsi extends ChartPaneIndicator {
     this.overbought = 70,
     this.oversold = 30,
     super.height,
+    super.label,
   }) : assert(period > 0);
 
   final int period;
@@ -28,7 +29,7 @@ class ChartRsi extends ChartPaneIndicator {
   final double oversold;
 
   @override
-  List<Object> get props => [period, color, overbought, oversold, height];
+  List<Object> get props => [period, color, overbought, oversold, height, label];
 
   @override
   String formatValue(double value) => value.toStringAsFixed(0);
@@ -47,6 +48,7 @@ class ChartMacd extends ChartPaneIndicator {
     required this.upColor,
     required this.downColor,
     super.height,
+    super.label,
   }) : assert(fastPeriod > 0 && slowPeriod > fastPeriod && signalPeriod > 0);
 
   final int fastPeriod;
@@ -58,7 +60,17 @@ class ChartMacd extends ChartPaneIndicator {
   final Color? downColor;
 
   @override
-  List<Object?> get props => [fastPeriod, slowPeriod, signalPeriod, macdColor, signalColor, upColor, downColor, height];
+  List<Object?> get props => [
+    fastPeriod,
+    slowPeriod,
+    signalPeriod,
+    macdColor,
+    signalColor,
+    upColor,
+    downColor,
+    height,
+    label,
+  ];
 
   @override
   String formatValue(double value) => formatCompact(value);
@@ -77,6 +89,7 @@ class ChartStochastic extends ChartPaneIndicator {
     this.overbought = 80,
     this.oversold = 20,
     super.height,
+    super.label,
   }) : assert(kPeriod > 0 && kSmoothing > 0 && dPeriod > 0);
 
   final int kPeriod;
@@ -88,7 +101,7 @@ class ChartStochastic extends ChartPaneIndicator {
   final double oversold;
 
   @override
-  List<Object?> get props => [kPeriod, kSmoothing, dPeriod, kColor, dColor, overbought, oversold, height];
+  List<Object?> get props => [kPeriod, kSmoothing, dPeriod, kColor, dColor, overbought, oversold, height, label];
 
   @override
   String formatValue(double value) => value.toStringAsFixed(0);
@@ -97,13 +110,13 @@ class ChartStochastic extends ChartPaneIndicator {
 /// Wilder's average true range: how far the price moves in a candle, gaps
 /// from the previous close included, in price units.
 class ChartAtr extends ChartPaneIndicator {
-  const ChartAtr({this.period = 14, required this.color, super.height}) : assert(period > 0);
+  const ChartAtr({this.period = 14, required this.color, super.height, super.label}) : assert(period > 0);
 
   final int period;
   final Color color;
 
   @override
-  List<Object> get props => [period, color, height];
+  List<Object> get props => [period, color, height, label];
 
   @override
   String formatValue(double value) => formatCompact(value);

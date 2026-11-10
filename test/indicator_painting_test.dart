@@ -226,4 +226,59 @@ void main() {
     // A bounded oscillator keeps its fixed range whatever is visible.
     expect(transform.panes[1].axis, const PriceAxis(start: 0, end: 100));
   });
+
+  testWidgets('a pane writes its label in its top-left corner', (tester) async {
+    final chart = find.byWidgetPredicate((w) => w is CustomPaint && w.painter is ChartPainter);
+    final controller = TradingChartController();
+    Future<void> pump(String label) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TradingChart(
+              candles: _candles(),
+              lines: const [],
+              orderLines: const [],
+              positions: const [],
+              style: const ChartStyle(),
+              indicators: [ChartRsi(color: Colors.blue, label: label)],
+              interval: const Duration(minutes: 1),
+              viewConfig: const ChartViewConfig(),
+              viewResetKey: 'BTC',
+              formatPrice: (price) => price.toStringAsFixed(1),
+              onPointerDownInChart: (_, _, _, _) {},
+              onPointerDownOutsideChart: () {},
+              onDragUpdate: (_, _, _) => false,
+              onDragEnd: () async {},
+              controller: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump('RSI 14');
+    final corner = controller.transform!.panes.single.rect.topLeft + const Offset(6, 4);
+    final label = paints
+      ..something((method, args) => method == #drawParagraph && ((args[1] as Offset) - corner).distance < 1e-6);
+    expect(chart, label);
+
+    await pump('');
+    expect(chart, isNot(label));
+
+    // A pane shorter than a line of text leaves its label out.
+    await tester.binding.setSurfaceSize(const Size(400, 80));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pump('RSI 14');
+    final small = controller.transform!.panes.single.rect;
+    expect(small.height, lessThan(14));
+    expect(
+      chart,
+      isNot(
+        paints..something(
+          (method, args) => method == #drawParagraph && (args[1] as Offset).dx == small.left + 6,
+        ),
+      ),
+    );
+  });
 }

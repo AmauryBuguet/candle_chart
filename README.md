@@ -16,7 +16,8 @@ An independent, embeddable candlestick trading chart widget for Flutter.
   profiles stand against either edge) or in a pane of their own under the
   price pane, on their own value axis (`ChartVolume`, `ChartRsi`, `ChartMacd`,
   `ChartStochastic`, `ChartAtr`). Panes stack in
-  list order with a drag handle above each; `ChartTransform.panes` tells a
+  list order with a drag handle above each and their `label` in the top-left
+  corner; `ChartTransform.panes` tells a
   host where they are.
 - Drawings (`ChartDrawing`): trend line, ray, extended line, horizontal
   line and ray, vertical line, rectangle, parallel channel, Fibonacci

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/widgets.dart';
 
 import '../internal/candle_time.dart';
@@ -222,6 +224,7 @@ class ChartPainter extends CustomPainter {
         yForValue: (v) => rect.top + (1 - (v - axis.start) / axis.range) * rect.height,
         textStyle: style.labelStyle.textStyle,
       ).draw(render);
+      _drawPaneLabel(canvas, rect, pane.label);
     }
 
     if (candles.isNotEmpty) {
@@ -303,6 +306,21 @@ class ChartPainter extends CustomPainter {
         ..color = style.colors.grid
         ..strokeWidth = 1,
     );
+  }
+
+  static const _paneLabelInset = Offset(6, 4);
+
+  /// A pane's name in its top-left corner, left out of a pane too small for it.
+  void _drawPaneLabel(Canvas canvas, Rect rect, String label) {
+    if (label.isEmpty) return;
+    final text = TextPainter(
+      text: TextSpan(text: label, style: style.labelStyle.textStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: max(0, rect.width - _paneLabelInset.dx * 2));
+    if (text.height + _paneLabelInset.dy > rect.height) return;
+    text.paint(canvas, rect.topLeft + _paneLabelInset);
   }
 
   /// A pane's guide lines: an oscillator's bounds, a histogram's zero.

@@ -45,8 +45,8 @@ class ExampleChart extends StatelessWidget {
       style: const ChartStyle(),
       indicators: const [
         ChartEma(period: 20, color: Colors.amber),
-        ChartVolume(),
-        ChartRsi(color: Colors.purple),
+        ChartVolume(label: 'Volume'),
+        ChartRsi(color: Colors.purple, label: 'RSI 14'),
       ],
       interval: interval,
       viewConfig: const ChartViewConfig(),
