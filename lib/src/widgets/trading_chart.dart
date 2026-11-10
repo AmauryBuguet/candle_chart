@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../internal/candle_countdown.dart';
 import '../internal/chart_controller.dart';
 import '../models/axis.dart';
 import '../models/chart_candle.dart';
@@ -229,6 +232,7 @@ class _TradingChartState extends State<TradingChart> {
   late final ChartController _controller;
   final FocusNode _focus = FocusNode(debugLabel: 'TradingChart');
   PriceAxis? _lastReportedPriceAxis;
+  Timer? _countdownTimer;
 
   List<ChartDrawing> get _drawings => [
     for (final d in widget.drawings)
@@ -267,7 +271,20 @@ class _TradingChartState extends State<TradingChart> {
     _syncDrawingInputs();
     widget.controller?._attach(_controller.jumpToLive);
     HardwareKeyboard.instance.addHandler(_syncAxisLock);
+    _syncCountdownTimer();
     _reportPriceAxisIfChanged();
+  }
+
+  /// Ticks the countdown under the forming candle's price.
+  void _syncCountdownTimer() {
+    if (!widget.style.candleCountdown) {
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+      return;
+    }
+    _countdownTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (widget.candles.isNotEmpty) setState(() {});
+    });
   }
 
   /// Shift locks the point being aimed to the previous one's axis; read
@@ -295,6 +312,7 @@ class _TradingChartState extends State<TradingChart> {
       colors: widget.style.colors,
     );
     _syncDrawingInputs();
+    _syncCountdownTimer();
     if (widget.activeTool != oldWidget.activeTool) {
       _controller.toolChanged();
       // Escape must drop the tool before the first click gives the chart focus.
@@ -306,6 +324,7 @@ class _TradingChartState extends State<TradingChart> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_syncAxisLock);
+    _countdownTimer?.cancel();
     widget.controller?._detach();
     _controller.dispose();
     _focus.dispose();
@@ -457,6 +476,9 @@ class _TradingChartState extends State<TradingChart> {
                         timeAxis: _controller.timeAxis,
                         crosshairPosition: _controller.crosshairFor(c.biggest),
                         crosshairArmed: _controller.activeTool != null,
+                        candleCountdown: widget.style.candleCountdown
+                            ? candleCountdown(widget.candles, DateTime.now().millisecondsSinceEpoch)
+                            : null,
                         handleSpot: _controller.handleSpotFor(c.biggest),
                         positions: widget.candles.isNotEmpty ? widget.positions : const [],
                         style: widget.style,

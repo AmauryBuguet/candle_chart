@@ -19,6 +19,7 @@ import 'candle_painter.dart';
 import 'crosshair_painter.dart';
 import 'dashes.dart';
 import 'drawing_painter.dart';
+import 'last_price_painter.dart';
 import 'position_painter.dart';
 import 'price_line_painter.dart';
 import 'profile_painter.dart';
@@ -28,8 +29,9 @@ import 'series_painter.dart';
 typedef IndicatorEntry<T extends ChartIndicator> = (T indicator, IndicatorRender render);
 
 /// Paints the trading chart: the price pane with its candles, overlays,
-/// lines, orders and positions, then one pane per pane indicator, the grid
-/// and the crosshair running through them all.
+/// lines, orders and positions, then one pane per pane indicator, the grid,
+/// the forming candle's price label and the crosshair running through them
+/// all.
 class ChartPainter extends CustomPainter {
   /// Creates a [ChartPainter].
   ///
@@ -44,6 +46,7 @@ class ChartPainter extends CustomPainter {
     required this.timeAxis,
     this.crosshairPosition,
     this.crosshairArmed = false,
+    this.candleCountdown,
     required this.positions,
     required this.formatPrice,
     this.overlays = const [],
@@ -68,6 +71,10 @@ class ChartPainter extends CustomPainter {
   /// lands — the pointer on desktop, the cursor on a phone — and is drawn
   /// in its own colour and thicker.
   final bool crosshairArmed;
+
+  /// The time left before the forming candle closes, under its price in
+  /// the right gutter; none when null.
+  final String? candleCountdown;
   final List<ChartPosition> positions;
 
   /// Formats a price for display in axis/crosshair labels.
@@ -217,6 +224,17 @@ class ChartPainter extends CustomPainter {
       ).draw(render);
     }
 
+    if (candles.isNotEmpty) {
+      LastPricePainter(
+        canvas: canvas,
+        projection: projection,
+        style: style,
+        priceAxis: priceAxis,
+        formatPrice: formatPrice,
+        right: size.width,
+      ).draw(candles.last, candleCountdown);
+    }
+
     final position = crosshairPosition;
     if (position != null && (style.crosshair || crosshairArmed) && layout.plotRect.contains(position)) {
       CrosshairPainter(
@@ -328,6 +346,7 @@ class ChartPainter extends CustomPainter {
   bool shouldRepaint(covariant ChartPainter oldDelegate) {
     return oldDelegate.crosshairPosition != crosshairPosition ||
         oldDelegate.crosshairArmed != crosshairArmed ||
+        oldDelegate.candleCountdown != candleCountdown ||
         oldDelegate.candles != candles ||
         oldDelegate.lines != lines ||
         oldDelegate.orderLines != orderLines ||

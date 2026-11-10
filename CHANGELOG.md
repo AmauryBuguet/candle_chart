@@ -1,5 +1,7 @@
 ## Unreleased
 
+* The forming candle's price is labelled in the right gutter, in the candle's colour.
+* `ChartStyle.candleCountdown`: that label counts down to the candle's close, on by default.
 * `TradingChart.onDragCancel`: called when the system cancels the pointer mid-gesture.
 
 ## 0.13.2

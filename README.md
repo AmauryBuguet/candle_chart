@@ -33,6 +33,8 @@ An independent, embeddable candlestick trading chart widget for Flutter.
 - `onNeedMoreHistory`: told the oldest candle's timestamp when the view
   nears it, once, so the host can fetch what comes before.
 - Optional crosshair with time/price labels on hover.
+- The forming candle's price labelled on the price axis, with an optional
+  countdown to its close.
 - Draggable horizontal price lines (`ChartLine`) and order overlays
   (`ChartOrderLine`, drawn from their placement time with a "ghost" line back
   to their original price while being edited).
